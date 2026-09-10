@@ -804,8 +804,17 @@ def _ctx(**services):
 
 def _config(**over):
     """假配置：`productivity_tools_plugin` 读的两个键没有 getattr 兜底，
-    所以必须显式给全；其余键只给关心的那几个，用来验证缺字段时的容错。"""
-    base = dict(tools_productivity=True, productivity_reminder_scheduler=True)
+    所以必须显式给全；其余键只给关心的那几个，用来验证缺字段时的容错。
+
+    **默认关掉提醒持久化**（P4-A2）：本文件的用例测的是"到点接线"，不是持久化。
+    开着它会让插件按默认路径往**仓库的 `data/agent_reminders.json`** 写状态 ——
+    那会污染真实运行目录，并让用例互相影响（实测踩到：id 从 rem-1 变成 rem-4，
+    因为上次运行留下的 counter 被恢复了）。持久化本身由
+    `tests/agent/test_reminder_persist.py::TestPluginWiringPersistence`
+    在 tmp_path 里隔离测试。
+    """
+    base = dict(tools_productivity=True, productivity_reminder_scheduler=True,
+                productivity_reminder_persist=False)
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -1208,6 +1217,7 @@ class TestToolsPluginOnDueWiring:
             reminder = reg.tools["reminder"]
             res = reminder.execute({"what": "喝水", "minutes": 0.001})
             assert res.success
+            new_id = res.data["id"]              # id 是对外不透明的，不该硬编码 rem-1
             assert len(reminder.pending()) == 1, "提醒进入待触发队列"
             assert reminder.pending()[0].due_at > time.time(), "刚设好时还没到点"
 
@@ -1226,7 +1236,7 @@ class TestToolsPluginOnDueWiring:
 
         assert [e[0] for e in bus.emits] == [EventTypes.REMINDER_DUE]
         assert bus.emits[0][1] == {
-            "reminder_id": "rem-1", "what": "喝水", "text": "提醒你喝水",
+            "reminder_id": new_id, "what": "喝水", "text": "提醒你喝水",
         }
 
 

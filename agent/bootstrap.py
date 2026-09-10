@@ -102,6 +102,8 @@ class AgentConfig:
     productivity_translate: bool = True          # translate 复用项目 LLM
     productivity_weather: bool = True            # weather 走 Open-Meteo（免密钥）
     productivity_reminder_scheduler: bool = True  # 提醒到点调度线程
+    productivity_reminder_persist: bool = True    # 提醒落盘（P4-A2 / D13）
+    productivity_reminder_store: str = "data/agent_reminders.json"
     weather_default_city: str = ""               # 用户没说城市时的默认城市（空=必须问）
 
     # 摘要器
@@ -210,6 +212,11 @@ class AgentConfig:
             productivity_weather=bool(get("agent.productivity.weather", True)),
             productivity_reminder_scheduler=bool(
                 get("agent.productivity.reminder_scheduler", True)),
+            productivity_reminder_persist=bool(
+                get("agent.productivity.reminder_persist", True)),
+            productivity_reminder_store=str(
+                get("agent.productivity.reminder_store", "data/agent_reminders.json")
+                or "data/agent_reminders.json"),
             weather_default_city=str(get("agent.weather.default_city", "") or ""),
             summarizer_provider=str(get("agent.summarizer.provider", "hybrid")),
             summarizer_threshold=int(get("agent.summarizer.template_threshold", 3)),

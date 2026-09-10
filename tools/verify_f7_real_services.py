@@ -193,6 +193,52 @@ def main() -> int:
             check(sched.fired_count >= 1, "调度器统计到已播报条数",
                   f"fired={sched.fired_count}")
 
+        # ── F7-e 提醒跨进程不丢（P4-A2 / D13 的直接验收）──
+        #
+        # 这里必须**真的开子进程**，不能在同一个进程里换对象图了事：
+        # D13 说的失败是"关掉程序再打开，提醒没了"，而"关掉程序"这件事
+        # 只有另起一个进程才验得真。add / list / clear 分别是三个独立进程，
+        # 用的是与主进程同一份配置指的那个状态文件。
+        print("\n[F7-e] 提醒跨进程不丢（D13：关掉程序再打开，提醒还在）")
+        import subprocess
+        import sys as _sys
+
+        from agent.reminder_store import ReminderStore as _RS
+
+        store_path = str(_RS().path)
+        check(bool(store_path), "提醒状态文件路径可解析", store_path)
+
+        def _cli(*argv: str) -> tuple:
+            p = subprocess.run(
+                [_sys.executable, "tools/reminders_cli.py", *argv],
+                cwd=str(PROJECT), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False, timeout=120,
+            )
+            text = ((p.stdout or "") + (p.stderr or "")).strip()
+            return p.returncode, text
+
+        marker = "跨进程喝水"
+
+        # ① 进程 A：设一条 30 分钟后的提醒
+        rc_add, out_add = _cli("add", "--what", marker, "--minutes", "30")
+        print(f"  进程A add   : exit={rc_add} {out_add.splitlines()[-1] if out_add else ''}")
+        check(rc_add == 0, "进程A 设置提醒成功", out_add[-80:] or "无输出")
+
+        # ② 进程 B：另起一个进程，应当读得到
+        rc_list, out_list = _cli("list")
+        print(f"  进程B list  : exit={rc_list} {out_list.replace(chr(10), ' / ')[:130]}")
+        check(rc_list == 0 and marker in out_list,
+              "进程B（另起的进程）读得到那条提醒 —— 重启不丢",
+              "读到了" if marker in out_list else f"没读到：{out_list[:80]}")
+
+        # ③ 进程 C：清理测试数据，别留在用户的状态文件里
+        rc_clear, out_clear = _cli("clear", "--what", marker)
+        print(f"  进程C clear : exit={rc_clear} {out_clear.splitlines()[-1] if out_clear else ''}")
+        check(rc_clear == 0, "进程C 清理测试提醒成功")
+        _rc_after, out_after = _cli("list")
+        check(marker not in out_after, "测试提醒已从状态文件消失（不污染用户状态）",
+              out_after.replace(chr(10), " / ")[:80])
+
     finally:
         # dispose 会停掉调度线程；停不掉的话这里会留下悬挂线程（D8 的教训）
         app._teardown_agent_layer()

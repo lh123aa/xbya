@@ -41,6 +41,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, TypeVar
 
+from agent.store_guard import is_inside_forbidden_dir
 from agent.seams.embedder import (
     DEFAULT_DIM,
     EmbedderService,
@@ -94,9 +95,6 @@ _CANDIDATE_MIN = 20
 #: 按类别做向量检索时的过取倍数 —— vec0 的 `k` 在 JOIN 条件之前生效，
 #: 不过取就会让候选名额被别类条目挤占
 _KIND_OVERFETCH = 4
-
-#: 禁止写入的用户目录名（与 tracker_store / 安全白名单同源）
-_FORBIDDEN_DIR_NAMES = ("desktop", "documents", "downloads", "pictures")
 
 #: 主表 / FTS 表的结构校验清单（错结构无法靠 IF NOT EXISTS 修正，只能识别后降级）
 _MEMORY_TABLE = "memory_items"
@@ -254,9 +252,8 @@ def rrf_fuse(
 
 
 def _is_inside_forbidden_dir(path: Path) -> bool:
-    """路径是否落在用户桌面/文档/下载/图片下（与 tracker_store 同一判据）"""
-    parts = [p.lower() for p in path.parts]
-    return any(name in parts for name in _FORBIDDEN_DIR_NAMES)
+    """路径是否落在用户桌面/文档/下载/图片下（判据见 `agent/store_guard.py`）"""
+    return is_inside_forbidden_dir(path)
 
 
 def _import_sqlite_vec() -> Optional[Any]:

@@ -316,9 +316,21 @@ class ReminderTool(BaseTool):
         self,
         on_due: Optional[ReminderCallback] = None,
         default_minutes: float = DEFAULT_MINUTES,
+        store: Optional[Any] = None,
     ) -> None:
+        """
+        Args:
+            on_due: 到点回调（由插件注入，负责播报）
+            default_minutes: 未给 minutes 时的默认提前量
+            store: 持久化后端（P4-A2 / D13）。鸭子类型，只需
+                `load() -> payload|None` 与 `save(payload) -> bool`；
+                传 None = 纯内存（与加持久化之前的行为完全一致）。
+                ⚠️ 存储层的异常必须自己吞掉 —— 这里不替它兜底，
+                因为"存不下来"不该让用户设的提醒失败。
+        """
         self._on_due = on_due
         self._default_minutes = default_minutes
+        self._store = store
         self._items: Dict[str, Reminder] = {}
         self._counter = 0
         #: 提醒表会被两个线程碰：`execute()` 在工具线程池里加，调度线程里 `due_now()` 取。
@@ -346,6 +358,8 @@ class ReminderTool(BaseTool):
         item = Reminder(id=reminder_id, what=what, due_at=due_at, when_text=when_text)
         with self._lock:
             self._items[reminder_id] = item
+            snapshot = self.to_payload()
+        self._persist(snapshot)
 
         return ToolResult.ok(
             data={
@@ -384,6 +398,10 @@ class ReminderTool(BaseTool):
                     fired.append(item)
             for item in fired:
                 self._items.pop(item.id, None)
+            # 到点即出表，落盘要跟上 —— 否则重启后一条已经响过的提醒会再响一次
+            snapshot = self.to_payload() if fired else None
+        if snapshot is not None:
+            self._persist(snapshot)
         for item in fired:
             if self._on_due is not None:
                 try:
@@ -400,7 +418,98 @@ class ReminderTool(BaseTool):
     def cancel(self, reminder_id: str) -> bool:
         """取消一条提醒"""
         with self._lock:
-            return self._items.pop(reminder_id, None) is not None
+            removed = self._items.pop(reminder_id, None) is not None
+            snapshot = self.to_payload() if removed else None
+        if snapshot is not None:
+            self._persist(snapshot)
+        return removed
+
+    # ── 持久化（P4-A2 / D13）──
+    #
+    # 三个要点：
+    #   ① 落盘在**锁外**做 —— 文件 I/O 不该占着锁，否则调度线程会被磁盘卡住
+    #   ② 快照在**锁内**取 —— 保证写出去的是某一时刻的一致状态
+    #   ③ 任何失败只记日志 —— 存不下来也得让用户把提醒设上（内存里还有效）
+
+    def to_payload(self) -> Dict[str, Any]:
+        """当前提醒表的可序列化快照（含 `counter`，避免重启后 id 复用）"""
+        return {
+            "counter": self._counter,
+            "items": [
+                {"id": i.id, "what": i.what, "due_at": i.due_at,
+                 "when_text": i.when_text, "fired": i.fired}
+                for i in self._items.values()
+            ],
+        }
+
+    def apply_payload(self, payload: Optional[Dict[str, Any]]) -> int:
+        """把恢复出来的提醒并回内存表
+
+        Returns:
+            实际恢复的条数
+
+        语义选择：**已到点但没响过的提醒保留原 due_at** —— 调度器下一跳就会看到
+        它过期并立刻播报（"你上次让我提醒的事"），而不是悄悄丢掉。
+        用户关着程序的这段时间到点了，开机后补一声，比什么都不发生更接近"提醒"的本意。
+        """
+        if not payload:
+            return 0
+        items = payload.get("items") or []
+        restored = 0
+        with self._lock:
+            for raw in items:
+                if not isinstance(raw, dict):
+                    continue
+                rid = str(raw.get("id") or "")
+                if not rid or rid in self._items:
+                    continue
+                try:
+                    due_at = float(raw.get("due_at"))
+                except (TypeError, ValueError):
+                    continue
+                self._items[rid] = Reminder(
+                    id=rid,
+                    what=str(raw.get("what") or ""),
+                    due_at=due_at,
+                    when_text=str(raw.get("when_text") or ""),
+                    fired=bool(raw.get("fired")),
+                )
+                restored += 1
+                # id 形如 rem-3 → 把计数器顶到 3，避免重启后 rem-1 撞车
+                suffix = rid.rsplit("-", 1)[-1]
+                if suffix.isdigit():
+                    self._counter = max(self._counter, int(suffix))
+            counter = payload.get("counter")
+            if isinstance(counter, int) and counter >= 0:
+                self._counter = max(self._counter, counter)
+        if restored:
+            logger.info("[reminder] 已恢复 %d 条未到点提醒", restored)
+        return restored
+
+    def restore(self) -> int:
+        """从 store 恢复（装配时调用一次）
+
+        Returns:
+            恢复条数；无 store / 无文件 / 读失败都返回 0
+        """
+        if self._store is None:
+            return 0
+        try:
+            payload = self._store.load()
+        except Exception as e:                          # 存储层违约也不能炸装配
+            logger.warning("[reminder] 恢复失败（按无提醒启动）: %s", e)
+            return 0
+        return self.apply_payload(payload)
+
+    def _persist(self, snapshot: Dict[str, Any]) -> bool:
+        """落盘（失败只记日志，绝不上抛）"""
+        if self._store is None:
+            return False
+        try:
+            return bool(self._store.save(snapshot))
+        except Exception as e:
+            logger.warning("[reminder] 落盘失败（提醒仍在内存里）: %s", e)
+            return False
 
 
 # ══════════════════════════════════════════════════════
@@ -465,11 +574,16 @@ def all_productivity_tools(
     translate_func: Optional[TranslateFunc] = None,
     weather_func: Optional[WeatherFunc] = None,
     on_reminder_due: Optional[ReminderCallback] = None,
+    reminder_store: Optional[Any] = None,
 ) -> List[BaseTool]:
-    """构造全部生产力工具实例"""
+    """构造全部生产力工具实例
+
+    Args:
+        reminder_store: 提醒持久化后端（P4-A2 / D13）；None = 纯内存，与加持久化前一致
+    """
     return [
         CalculateTool(),
         TranslateTool(translate_func),
-        ReminderTool(on_due=on_reminder_due),
+        ReminderTool(on_due=on_reminder_due, store=reminder_store),
         WeatherTool(weather_func),
     ]

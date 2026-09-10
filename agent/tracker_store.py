@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agent.tracker import EntityTracker
+from agent.store_guard import FORBIDDEN_DIR_NAMES, is_inside_forbidden_dir
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,12 @@ DEFAULT_THROTTLE = 1.0
 SCHEMA_VERSION = 1
 
 #: 禁止写入的用户目录名（与安全白名单同源，防状态文件污染用户数据区）
-_FORBIDDEN_DIR_NAMES = ("desktop", "documents", "downloads", "pictures")
-
-
-def _is_inside_forbidden_dir(path: Path) -> bool:
-    """路径是否落在用户桌面/文档/下载/图片下"""
-    parts = [p.lower() for p in path.parts]
-    return any(name in parts for name in _FORBIDDEN_DIR_NAMES)
+#:
+#: P4-A2：定义已抽到 `agent/store_guard.py`（原先在 tracker_store 与 recall_store
+#: 各写了一遍，提醒存储又要写第三遍 —— 安全规则三份拷贝必然漂移）。
+#: 这里保留同名别名，避免破坏已有引用（文档与源码注释里都提到过这个名字）。
+_FORBIDDEN_DIR_NAMES = FORBIDDEN_DIR_NAMES
+_is_inside_forbidden_dir = is_inside_forbidden_dir
 
 
 class TrackerStore:

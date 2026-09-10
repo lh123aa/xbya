@@ -92,6 +92,8 @@ agent:
     module: agent.plugins.pipeline_plugin
   productivity:
     reminder_scheduler: true
+    reminder_persist: true                      # P4-A2 / D13：提醒落盘，进程重启不丢
+    reminder_store: ./data/agent_reminders.json
     translate: true
     weather: true
   router:
