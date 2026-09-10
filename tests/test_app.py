@@ -123,6 +123,89 @@ class TestXiaoyiApp:
         assert result is True
         assert self.app._running is True
 
+    # ── P4-B3：外部依赖状态可见 ──
+    #
+    # 这一组守的是两类"外部原因伪装成我们的 bug"：
+    #   ① 配额 429 → 表现为"规划器偶尔拆不出计划"（缺陷 18）
+    #   ② 换了个没有 chat_with_tools 的引擎 → 路由兜底**静默失效**（与 D14 同类）
+    # 断言的对象是**真实存在的面** `app.get_status()`，不是想象出来的 `/status` 命令。
+
+    def test_get_status_exposes_llm_capability_and_agent_summary(self):
+        """状态里必须能看到 LLM 能力与 Agent 层摘要"""
+        self.app.initialize()
+        st = self.app.get_status()
+
+        assert "llm" in st and "agent" in st, "状态里必须带 LLM 能力与 Agent 摘要"
+        llm = st["llm"]
+        assert llm["engine"], "真实配置下应当有 LLM 引擎"
+        assert llm["tool_calling"] in (True, False)
+        assert "quota" in llm
+        agent = st["agent"]
+        assert agent is not None and agent["tools"] > 0
+        assert agent["safety_whitelist"], "白名单应当可见（安全边界要能查）"
+
+    def test_llm_capability_flags_engine_without_tool_calling(self):
+        """**关键回归**：引擎没有 chat_with_tools 时必须报 False，而不是含糊过去
+
+        这正是"换引擎 → 路由兜底静默失效"能被发现的地方。
+        """
+
+        class _NoToolsLLM:
+            model = "fake-no-tools"
+
+            def is_available(self):
+                return True
+
+        self.app.plugins["llm"] = _NoToolsLLM()
+        cap = self.app.llm_capability()
+        assert cap["engine"] == "_NoToolsLLM"
+        assert cap["tool_calling"] is False
+        # 同一事实必须能从 get_status 看到（人查状态就能发现）
+        assert self.app.get_status()["llm"]["tool_calling"] is False
+
+    def test_llm_capability_without_engine(self):
+        """没有 LLM 引擎时如实报 None，而不是假装可用"""
+        self.app.plugins.pop("llm", None)
+        self.app.plugins["llm"] = None
+        cap = self.app.llm_capability()
+        assert cap["engine"] is None
+        assert cap["tool_calling"] is None
+
+    def test_agent_setup_warns_when_engine_lacks_tool_calling(self, caplog):
+        """装配时必须**告警**，否则就是又一次静默降级（D14 的教训）"""
+        import logging as _logging
+
+        class _NoToolsLLM:
+            model = "fake-no-tools"
+
+            def is_available(self):
+                return True
+
+        self.app.plugins["llm"] = _NoToolsLLM()
+        with caplog.at_level(_logging.WARNING):
+            self.app._setup_agent_layer()
+
+        text = caplog.text
+        assert "chat_with_tools" in text, "必须点名缺的是哪个方法"
+        assert "LLM 路由兜底不可用" in text, "必须说清后果，而不是只说'引擎有问题'"
+
+    def test_llm_capability_survives_broken_plugin(self):
+        """插件自报异常不该炸掉状态查询（状态面必须永远能查）"""
+
+        class _BrokenLLM:
+            model = "broken"
+
+            def is_available(self):
+                raise RuntimeError("boom")
+
+            def quota_stats(self):
+                raise RuntimeError("boom")
+
+        self.app.plugins["llm"] = _BrokenLLM()
+        cap = self.app.llm_capability()
+        assert cap["available"] is None, "自报异常时如实报 None，不假装可用"
+        assert "error" in (cap["quota"] or {}), "配额查询异常要如实记录"
+
     def test_agent_layer_actually_assembles(self):
         """Agent 层必须真的装配成功，而不是被 except 静默降级
 

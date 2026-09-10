@@ -244,6 +244,31 @@ class XiaoyiApp:
                 stats["enabled"], stats["tools"], stats["router"],
                 stats["safety_whitelist"],
             )
+
+            # ── LLM 能力核查（P4-B3）：让"兜底没了"在启动时就能被看见 ──
+            #
+            # 背景：`route_with_tools()` 在引擎没有 `chat_with_tools` 时返回 None，
+            # 于是 HybridRouter 静默退回纯规则 —— 用户说法超出规则词表时会"突然变笨"，
+            # 而所有测试仍然全绿（测试断言的是规则路径）。
+            # 这与 D14（把错误的总线传给 Agent 层 → 全程静默降级）是同一类事故：
+            # **降级可以接受，静默降级不可接受。** 所以这里显式告警。
+            cap = self.llm_capability()
+            if cap["engine"] is None:
+                logger.warning("   ⚠️ 没有 LLM 引擎：闲聊与 LLM 兜底都不可用")
+            elif cap["tool_calling"] is False:
+                logger.warning(
+                    "   ⚠️ LLM 引擎 %s 不支持 chat_with_tools → **LLM 路由兜底不可用**："
+                    "用户说法超出规则词表时会直接退回闲聊（不会崩，但会显得变笨）。"
+                    "换引擎就会发生这种情况，可用 "
+                    "`python tools/probe_llm_capability.py` 复测能力。",
+                    cap["engine"],
+                )
+            q = cap.get("quota") or {}
+            logger.info(
+                "   LLM: 引擎=%s 模型=%s 工具调用=%s 配额受限=%s 累计限流=%s",
+                cap["engine"], cap["model"], cap["tool_calling"],
+                q.get("quota_blocked"), q.get("quota_hits"),
+            )
         except Exception as e:
             logger.error("Agent 层装配失败，降级为纯对话模式: %s", e, exc_info=True)
             self.agent_stack = None
@@ -786,6 +811,50 @@ class XiaoyiApp:
 
         logger.info("小忆应用已关闭")
     
+    def llm_capability(self) -> Dict[str, Any]:
+        """LLM 引擎的**能力**与**外部依赖状态**（P4-B3）
+
+        ## 为什么需要它
+
+        两条"外部原因伪装成我们的 bug"的路，都在这里被摊开：
+
+        | 现象 | 真实原因 | 原先能否看出来 |
+        |------|---------|---------------|
+        | 规划器"偶尔拆不出计划" | 免费档配额 429（缺陷 18） | ❌ 只有一行 error 日志 |
+        | 用户说法超出规则词表时"突然变笨" | 换了个**没有 `chat_with_tools`** 的引擎，路由兜底静默失效 | ❌ 完全看不出来 |
+
+        后者与本项目踩过的 D14（把错误的事件总线传给 Agent 层 → 全程静默降级）是同一类事故：
+        **降级本身可以接受，静默降级不可接受**。
+
+        Returns:
+            `{engine, model, available, tool_calling, quota}`；无引擎时 `engine=None`
+        """
+        llm = self.plugins.get("llm") or self.get_plugin("LLMEngine")
+        if llm is None:
+            return {"engine": None, "model": None, "available": False,
+                    "tool_calling": None, "quota": None}
+
+        try:
+            available: Optional[bool] = bool(llm.is_available())
+        except Exception:                                # 插件自报异常不该炸状态查询
+            available = None
+
+        quota: Optional[Dict[str, Any]] = None
+        if hasattr(llm, "quota_stats"):
+            try:
+                quota = llm.quota_stats()
+            except Exception as e:
+                quota = {"error": f"{type(e).__name__}: {e}"}
+
+        return {
+            "engine": type(llm).__name__,
+            "model": getattr(llm, "model", None),
+            "available": available,
+            # None = 无法判断；False = **明确不具备**（此时路由兜底不可用）
+            "tool_calling": hasattr(llm, "chat_with_tools"),
+            "quota": quota,
+        }
+
     def get_status(self) -> Dict[str, Any]:
         """获取应用状态"""
         status = {
@@ -815,7 +884,25 @@ class XiaoyiApp:
                 "has_gpu": hw.has_gpu,
                 "gpu_name": hw.gpu_name
             }
-        
+
+        # LLM 能力与外部依赖状态（P4-B3）：把"配额挡住了"与"引擎不会工具调用"摊开
+        status["llm"] = self.llm_capability()
+
+        # Agent 层摘要（只给关键字段，不把整棵 stats 树塞进状态）
+        if self.agent_stack is not None:
+            st = self.agent_stack.stats()
+            status["agent"] = {
+                "enabled": st["enabled"],
+                "tools": st["tools"],
+                "router": st["router"],
+                "planner": st["planner"],
+                "memory": st["memory"],
+                "plugins": len(st["plugins"]),
+                "safety_whitelist": st["safety_whitelist"],
+            }
+        else:
+            status["agent"] = None
+
         return status
 
     #: 支持的性能档位

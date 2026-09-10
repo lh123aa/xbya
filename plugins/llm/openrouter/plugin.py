@@ -13,6 +13,7 @@
 import json
 import logging
 import os
+import time
 from typing import Optional, List, Dict, Any
 
 from interfaces.llm import LLMEngine
@@ -116,6 +117,17 @@ class UniversalLLM(LLMEngine):
         self.max_tokens = max_tokens
         self.temperature = temperature
         self._available = False
+
+        # ── 外部依赖状态（P4-B3）──
+        #
+        # 为什么必须记下来：免费档配额打满时，HTTP 429 在这里只留下一行 error 日志，
+        # 对上层表现为"模型没给出结果" —— 于是**外部配额问题伪装成了"我们的代码坏了"**。
+        # 验收脚本与用户都看不出真相（缺陷 18 就是这么来的）。
+        # 现在把"最近一次是不是被限流"变成可查状态：`quota_stats()`。
+        self._quota_hits = 0          # 累计 429 次数
+        self._last_quota_at = 0.0     # 最近一次 429 的时间戳
+        self._last_error = ""         # 最近一次非 200 的简述（不含密钥）
+        self._ok_calls = 0            # 累计成功次数
 
         self._check_availability()
 
@@ -242,6 +254,13 @@ class UniversalLLM(LLMEngine):
             response = requests.post(url, headers=headers, json=payload, timeout=60)
 
             if response.status_code != 200:
+                # 429 单独记账：它是**外部配额**，不是"模型不行"（缺陷 18）
+                if response.status_code == 429:
+                    self._quota_hits += 1
+                    self._last_quota_at = time.time()
+                    self._last_error = "429 配额/限流"
+                else:
+                    self._last_error = f"HTTP {response.status_code}"
                 logger.error(
                     f"API 错误: {response.status_code} - {response.text[:300]}"
                 )
@@ -253,12 +272,17 @@ class UniversalLLM(LLMEngine):
                 content = data["choices"][0].get("message", {}).get("content", "")
                 if content:
                     logger.info(f"回复成功，长度: {len(content)}")
+                    self._ok_calls += 1
+                    self._last_error = ""      # 恢复正常 → 解除"被限流"状态
                     return content.strip()
 
             logger.warning("API 返回空回复")
             return None
 
         except Exception as e:
+            # 也记进"最近一次失败原因"：连不上、超时同样是**外部依赖状态**，
+            # 只写类型名不写消息（消息里可能带 URL，避免任何形式的意外泄露）。
+            self._last_error = f"调用异常: {type(e).__name__}"
             logger.error(f"API 调用异常: {e}")
             return None
 
@@ -402,6 +426,27 @@ class UniversalLLM(LLMEngine):
             "version": "1.0.0",
             "base_url": self.base_url,
             "status": "available" if self._available else "unavailable",
+        }
+
+    def quota_stats(self) -> Dict[str, Any]:
+        """外部依赖状态（P4-B3）：配额/限流是否正在挡路
+
+        `quota_blocked` 的语义是**"当前是否处于被限流状态"**：
+        最近一次请求以 429 结束即为 True，任何一次成功调用都会把它复位。
+        这样它回答的是"现在能不能用"，而不是"历史上错过多少次"（后者看 `quota_hits`）。
+
+        Returns:
+            `{quota_blocked, quota_hits, last_quota_at, last_error, ok_calls,
+              fallback_configured}`
+            —— 不含任何密钥。
+        """
+        return {
+            "quota_blocked": self._last_error.startswith("429"),
+            "quota_hits": self._quota_hits,
+            "last_quota_at": self._last_quota_at,
+            "last_error": self._last_error,
+            "ok_calls": self._ok_calls,
+            "fallback_configured": bool(self.fallback_api_key and self.fallback_model),
         }
 
     @staticmethod
