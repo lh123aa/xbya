@@ -366,6 +366,60 @@ class AgentStack:
         )
 
 
+def assert_kernel_bus(bus: Any) -> None:
+    """确认传进来的是**内核契约**的事件总线（D14 / P4-B1 守护）
+
+    ## 为什么必须"显式拒绝"而不是"尽力兼容"
+
+    项目里有**两个同名不同契约**的 EventBus：
+
+    | 类 | 订阅 | 发送 | 事件类型 |
+    |----|------|------|---------|
+    | `core.event_bus.EventBus` | `subscribe(EventType, h)` | `emit(EventType, data: dict)` | 枚举 |
+    | `core.kernel.events.EventBus` | `on(str, h) -> disposer` | `emit(str, **kwargs)` | 字符串 |
+
+    Agent 层只认**后者**。历史事故：`core/app.py::_setup_agent_layer` 传的是前者，
+    于是 `pipeline.start()` 里 `bus.on(...)` 直接 `AttributeError`，
+    被那一层的 `except` 吞掉 → **Agent 层在整个真实应用里一直是死的**
+    （静默降级成纯对话），而所有脚本级验收各自 new 内核总线，**全都测不出来**。
+
+    这与 P4-B3 处理的"引擎没有 `chat_with_tools` → 路由兜底静默失效"是同一类：
+    **降级可以接受，静默降级不可接受。** 所以这里把契约错误变成启动即炸，
+    并且错误信息**点名两个类**，让下一个接线的人一眼知道该换哪个。
+
+    Args:
+        bus: 待检查的总线对象
+
+    Raises:
+        TypeError: 缺少内核契约的方法（多半是传了 `core.event_bus.EventBus`）
+    """
+    if bus is None:
+        raise TypeError(
+            "Agent 层需要一个事件总线，收到 None。请传 "
+            "core.kernel.events.EventBus；**不要**传 core.event_bus.EventBus"
+            "（两者同名不同契约，见 agent/bootstrap.py::assert_kernel_bus）"
+        )
+
+    missing = [m for m in ("on", "emit", "off")
+               if not callable(getattr(bus, m, None))]
+    if missing:
+        # 找出它到底像哪一个 —— 错误信息里给出"你传的是什么"，而不只是"缺什么"
+        hint = ""
+        if callable(getattr(bus, "subscribe", None)):
+            hint = (
+                "  看起来你传的是 core.event_bus.EventBus"
+                "（它有 subscribe/emit(EventType, dict)，契约是枚举 + 字典）。\n"
+                "  Agent 层要的是 core.kernel.events.EventBus"
+                "（on/off/emit(str, **kwargs)，契约是字符串 + 关键字参数）。\n"
+                "  两者**不能互换**，历史上接错导致的不是报错而是"
+                "「Agent 层全程静默降级」。"
+            )
+        raise TypeError(
+            f"事件总线契约不符：缺少 {missing}（收到 {type(bus).__module__}."
+            f"{type(bus).__name__}）。\n{hint}"
+        )
+
+
 def build_agent_stack(
     config: AgentConfig,
     bus: EventBus,
@@ -390,8 +444,17 @@ def build_agent_stack(
 
     Returns:
         AgentStack（已完成装配，但未 start）
+
+    Raises:
+        TypeError: `bus` 不是内核契约的事件总线（见 `assert_kernel_bus`）
     """
-    # ── 0. 环境服务：把外部注入的依赖与配置放进上下文，供插件取用 ──
+    # ── 0. 总线契约守护（D14 / P4-B1）──
+    #
+    # 放在最前面：契约不对就没有继续装配的意义，且必须**立刻**炸 ——
+    # 见 `assert_kernel_bus` 里记的那次静默降级事故。
+    assert_kernel_bus(bus)
+
+    # ── 0.1 环境服务：把外部注入的依赖与配置放进上下文，供插件取用 ──
     #
     # `translate` / `weather` 为 None 时**不注册**，而不是注册一个 None：
     # 这两个能力的默认实现由 `productivity_providers` 插件提供（F7），

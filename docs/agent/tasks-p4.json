@@ -22,7 +22,7 @@
     "P4-A1": "done",
     "P4-A2": "done",
     "P4-A3": "delivered_pending_human",
-    "P4-B1": "pending",
+    "P4-B1": "partially_done",
     "P4-B2": "done",
     "P4-B3": "done",
     "P4-B4": "partially_done",
@@ -123,6 +123,7 @@
       ],
       "evidence": "docs/agent/evidence/p4/eventbus.txt",
       "risk": "R3：改动面可能碰坏语音管线；若判定收益小于风险，则如实登记「不做」并写明理由",
+      "outcome": "partially_done（2026-09-11）。**只做了低风险的那一半，且是有意为之**：事故的形态不是『契约不统一』而是『接错了却不报错』（AttributeError 被上层 except 吞掉 → Agent 层自 P0 起在真实应用里全程静默降级）。故新增 `agent/bootstrap.py::assert_kernel_bus` 并接在 `build_agent_stack()` 第 0 步：契约不符立刻抛 TypeError，错误信息点名两个类、列出缺的方法、给出收到的类全名；`None` 单独给一条信息；只检查契约不检查具体类（测试替身不必继承真实类）。新增 tests/agent/test_eventbus_contract.py **12 项**，两个方向都覆盖（放行鸭子类型等价契约 / 拒绝旧总线与 None / 错误信息质量 / 装配入口 fail-fast / 把『两者不可互换』钉成断言）。**适配层本身未做** —— p4-plan.md §六与§八把『是否接受该改动面』列为人工决定（会碰受 G12 保护的语音路径），留给用户决定。过程中我的测试被真实契约推翻一次：内核总线的 handler 收的是**一个位置参数 Event 对象**（events.py:160），不是 `**kwargs`；顺带钉住 P3 的坑（`emit(t, source=\"x\", value=7)` 里 source 不进 data）。门禁：G1 2638 passed/1 skipped/0 failed；G2 7185 语句 100%。",
       "blocked_by": ["P4-A1"]
     },
     {
