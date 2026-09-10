@@ -41,7 +41,7 @@ from agent.seams.planner import (
 from agent.seams.router import RouterService
 from agent.seams.safety import SafetyService
 from agent.seams.summarizer import SummarizerService
-from agent.tools.base import ToolResult
+from agent.tools.base import ParamError, ToolResult
 from agent.tools.registry import ToolRegistry
 from agent.tracker import EntityTracker
 from core.kernel.events import EventBus, EventTypes
@@ -984,12 +984,26 @@ class AgentPipeline:
         """向工具索取操作预览（只读，用于确认前展示影响范围）
 
         工具未实现 preview() 或预览失败时返回空串，不影响确认流程。
+
+        **必须先校验参数类型**（P4-B2）：`preview()` 自己不做类型校验，而
+        `execute` 走 `registry.execute` 时会先过 `validate_params`。
+        两者若对同一份参数给出不同结论，确认界面展示的就是**一个永远不会执行的
+        范围** —— 用户照着它点了"确认"。实测（`tools/_tmp_b2_controlled.py`）：
+        `file_delete(dirs="Downloads", pattern="*.txt")` 的预览是
+        "找到 3 个文件（c.txt、a.txt、b.txt）"（字符串被逐字符解析失败后落到
+        默认四目录，把 Desktop 的也扫了进去），而真正执行时直接报类型错、一个都不删。
+        预览说 A、执行做 B，是"确认流程撒谎"，比不展示预览危险得多。
         """
         try:
             tool = self._registry.get(action)
             if tool is None or not hasattr(tool, "preview"):
                 return ""
+            tool.validate_params(params)
             return tool.preview(params) or ""
+        except ParamError as e:
+            # 参数不合法 → 不给预览（执行时也会被同一道校验拦下，两者结论一致）
+            logger.info("[pipeline] 参数不合法，跳过预览 (%s): %s", action, e)
+            return ""
         except Exception as e:
             logger.warning("[pipeline] 预览生成失败 (%s): %s", action, e)
             return ""

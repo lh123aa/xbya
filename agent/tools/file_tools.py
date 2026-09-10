@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.seams.safety import PathNotAllowed, SafetyService, SecurityError
-from agent.tools.base import BaseTool, ParamError, ToolResult
+from agent.tools.base import BaseTool, ParamError, ToolError, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -139,12 +139,43 @@ class _FileToolBase(BaseTool):
         return [p for p in self._guard.whitelist_roots() if self._exists(p)]
 
     def _resolve_dirs(self, dir_names: Optional[List[str]]) -> List[Path]:
-        """把目录名（Desktop/Documents/...）或路径解析为存在的目录列表"""
+        """把目录名（Desktop/Documents/...）或路径解析为存在的目录列表
+
+        **契约（P4-B2 起）：只有"未指定"才允许兜底**
+
+        | 入参 | 行为 |
+        |------|------|
+        | `None` / `[]` / 全空串 | 未指定 → 默认四目录（唯一允许的兜底） |
+        | **字符串**（含逗号串） | 抛 `ParamError`：期望数组 |
+        | 列表，但**一个都认不出来** | 抛 `ParamError`：明确拒绝，**不再**回退默认目录 |
+        | 列表，部分可识别 | 用可识别的那些（非法项记日志） |
+
+        为什么必须把兜底收窄到只剩"未指定"：`None`（没说）与"说了但我不认识"
+        原先共用同一个出口，于是**写操作的目标会被静默换掉**。
+        实测（`tools/_tmp_b2_controlled.py`）：
+        `file_move(dest="不存在的目录")` → 回退四目录 → 取 `dirs[0]` = **Desktop**，
+        文件被挪到桌面**并报成功**。用户听到的是"我没听懂"，发生的是"文件去别处了"。
+
+        字符串那条更隐蔽：字符串可迭代，`"Downloads"` 会被逐字符拆成
+        D/o/w/n/l/o/a/d/s 去解析，一个都匹配不上 → 同样落到兜底出口 →
+        `file_search(dirs="Downloads")` 变成**搜索四个目录**（实测命中 1 个 → 3 个）。
+        """
+        # 未指定 → 默认四目录
         if not dir_names:
             return self._default_dirs()
 
+        # 字符串 → 显式拒绝（哪怕它看起来像"只有一个值"）
+        if isinstance(dir_names, str):
+            raise ParamError(
+                self.name,
+                f'期望数组，收到字符串 {dir_names!r}；即使只有一个值也请写成数组，'
+                f'例如 ["{dir_names}"]',
+                "dirs",
+            )
+
         roots = {p.name.lower(): p for p in self._guard.whitelist_roots()}
         result: List[Path] = []
+        unknown: List[str] = []
 
         for item in dir_names:
             if not item:
@@ -156,12 +187,45 @@ class _FileToolBase(BaseTool):
                 try:
                     p = self._safe_path(str(item))
                 except (PathNotAllowed, SecurityError):
-                    logger.warning("[file_tools] 跳过非法目录: %s", item)
+                    unknown.append(str(item))
                     continue
             if self._exists(p) and p.is_dir() and p not in result:
                 result.append(p)
+            else:
+                unknown.append(str(item))
 
-        return result or self._default_dirs()
+        if result:
+            if unknown:
+                logger.warning("[file_tools] 跳过无法识别的目录: %s", unknown)
+            return result
+
+        available = "、".join(p.name for p in self._guard.whitelist_roots())
+        raise ParamError(
+            self.name,
+            f"不认识这些目录：{'、'.join(unknown) or '(空)'}；可用的目录是：{available}",
+            "dirs",
+        )
+
+    def _dirs_or_error(self, raw: Any) -> tuple:
+        """解析目录；非法时返回 `(None, 面向用户的说明)`
+
+        工具层不该把 `ParamError` 的技术文案念给用户（"参数错误 [file_search].dirs:
+        期望数组…"），但也**绝不能**把异常漏出去 —— 漏出去会被注册表记成"执行异常"，
+        用户听到一句无从照做的技术话。所以这里把技术原因写日志、
+        把一句能照做的话交给用户。
+        """
+        try:
+            return self._resolve_dirs(raw), None
+        except ParamError as e:
+            logger.warning("[file_tools] 目录解析失败: %s", e)
+            names = "、".join(p.name for p in self._guard.whitelist_roots())
+            # 把入参渲染成人话：调用方常传单元素列表（file_move 就是这样），
+            # 直接把 `['不存在的目录']` 的 repr 念给用户会很怪。
+            if isinstance(raw, (list, tuple)):
+                shown = "、".join(str(x) for x in raw)
+            else:
+                shown = str(raw)
+            return None, f"「{shown}」这个位置我没听懂哦，我只能操作：{names}"
 
     # ── 文件信息 ──
 
@@ -350,9 +414,11 @@ class FileSearchTool(_FileToolBase):
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
         pattern = str(params.get("pattern") or "*")
-        dirs = self._resolve_dirs(params.get("dirs"))
+        dirs, err = self._dirs_or_error(params.get("dirs"))
         time_range = params.get("time_range")
 
+        if err:
+            return ToolResult.fail(err, emotion="think")
         if not dirs:
             return ToolResult.empty("这些文件夹我都没找到呢")
 
@@ -402,9 +468,11 @@ class FileListTool(_FileToolBase):
     }
 
     def execute(self, params: Dict[str, Any]) -> ToolResult:
-        dirs = self._resolve_dirs(params.get("dirs"))
+        dirs, err = self._dirs_or_error(params.get("dirs"))
         include_dirs = bool(params.get("include_dirs", True))
 
+        if err:
+            return ToolResult.fail(err, emotion="think")
         if not dirs:
             return ToolResult.empty("这些文件夹我都没找到呢")
 
@@ -671,7 +739,12 @@ class FileMoveTool(_FileToolBase):
             )
 
         src = paths[0]
-        dirs = self._resolve_dirs([str(dest_raw)])
+        # 目标目录必须**解析得出来**。原先这里 `_resolve_dirs` 认不出就回退四目录，
+        # 于是取 `dirs[0]`（Desktop）→ 文件被挪到桌面还报成功（P4-B2 实测）。
+        # 现在认不出就明确拒绝，绝不替用户选一个目录。
+        dirs, derr = self._dirs_or_error([str(dest_raw)])
+        if derr:
+            return ToolResult.fail(derr, emotion="think")
         if not dirs:
             return ToolResult.fail(f"没找到「{dest_raw}」这个文件夹呢", emotion="sad")
 
@@ -754,6 +827,15 @@ class FileDeleteTool(_FileToolBase):
         1. targets：显式路径列表
         2. pattern（+dirs）：按模式匹配
         3. target：单个名称/路径
+
+        **列表参数收到字符串时整条忽略、绝不拆开**（P4-B2）：
+        `targets="C:\\a.txt"` 不会被拆成 `["C", ":", "\\", ...]`，也不会被当成
+        `["C:\\a.txt"]` —— 「把一句话拆成多个待删目标」是最危险的宽松转换，
+        宁可什么都不删（并让 `validate_params` 报类型错）也不猜。
+        实测 `_collect_targets({"targets": "C:\\x\\a.txt"}) == []`。
+
+        Raises:
+            ToolError: `dirs` 无法解析时（用户能看懂的说法放在 `user_message`）
         """
         raw: List[str] = []
 
@@ -763,7 +845,11 @@ class FileDeleteTool(_FileToolBase):
 
         pattern = params.get("pattern")
         if pattern:
-            dirs = self._resolve_dirs(params.get("dirs"))
+            dirs, derr = self._dirs_or_error(params.get("dirs"))
+            if derr:
+                # 无法确定搜索范围时**绝不能**默认四目录后照常删 —— 那会把
+                # "我没听懂你要在哪儿删"变成"我把四个目录里的都删了"。
+                raise ToolError(self.name, derr, user_message=derr)
             matched, _ = self._scan(dirs, pattern=str(pattern), limit=MAX_SEARCH_RESULTS)
             raw.extend([m["path"] for m in matched])
 
@@ -843,7 +929,11 @@ class FileDeleteTool(_FileToolBase):
         if params.get("permanent"):
             raise SecurityError("permanent_delete", "永久删除已禁用，只能移到回收站")
 
-        raw_targets = self._collect_targets(params)
+        try:
+            raw_targets = self._collect_targets(params)
+        except ToolError as e:
+            # `user_message` 才是念给用户听的那句（技术原文已被注册表留在 error 里）
+            return ToolResult.fail(e.user_message, emotion="think")
 
         if not raw_targets:
             return ToolResult.fail("你没说要删哪些文件呀", emotion="think")

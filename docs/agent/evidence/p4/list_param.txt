@@ -1,0 +1,135 @@
+P4-B2 证据：列表参数类型显式拒绝（缺陷 17b）
+================================================
+日期：2026-09-11
+任务：docs/agent/tasks-p4.json §P4-B2
+门禁：P4-G1 全量回归 / P4-G2 覆盖率 100% / P4-G3 端到端五项
+
+【一】原始记录与实际复现的差异（先说清楚，避免"照抄旧结论"）
+--------------------------------------------------------------
+tasks-p4.json 与 p4-plan.md 原先写的是：
+    「file_search(dirs="Downloads") 被逐字符迭代 → 匹配不到别名 → 静默回退默认四目录」
+
+复现后确认**方向对，但当时对可达路径的判断不完整**，实测到三件事：
+
+  (1) 经 ToolRegistry 调用时，字符串**本来就会被 validate_params 拒绝**
+      （`期望 array，收到 str`）—— 所以"静默回退"在注册表这条路上**并不可达**。
+      旧记录没有区分"哪条路径能到达缺陷"。
+  (2) 真正可达的路径有三条，且都绕开或晚于参数校验：
+        · `preview()`             —— pipeline._tool_preview 直接调它，**不过 validate_params**
+        · 直接 `tool.execute(...)` —— 不走注册表的调用方
+        · `dirs` 是**类型正确的列表**但元素认不出（例如 `["下载"]`）——
+          validate_params 放行，`_resolve_dirs` 兜底
+  (3) 还有一处**旧记录里完全没有的、更严重的同类缺陷**（见【二】B）。
+
+【二】实测到的缺陷（全部有原始输出）
+--------------------------------------------------------------
+受控沙箱：四个白名单目录，Desktop 有 a.txt/b.txt，Downloads 有 c.txt。
+（临时树 + StubGuard，绝不碰用户真实文件）
+
+A. 字符串 `dirs` 静默扩大搜索范围
+   改前：
+     _resolve_dirs("Downloads")  -> 4 个目录 ['Desktop','Documents','Downloads','Pictures']
+     _resolve_dirs(["Downloads"]) -> 1 个目录 ['Downloads']
+     file_search(dirs=["Downloads"], pattern="*.txt") -> 命中 1 个  ['c.txt']
+     file_search(dirs="Downloads",  pattern="*.txt") -> 命中 3 个  ['a.txt','b.txt','c.txt']
+   多出来的 a.txt/b.txt 在 Desktop —— 用户没点名的目录。
+   这些路径正是多步规划里 ${s1.paths} 喂给 file_delete 的输入。
+
+B. ★ 新发现：`file_move` 的目标目录被静默替换（比 A 更危险，且是写操作）
+     _resolve_dirs(["不存在的目录"]) -> 4 个目录（兜底）
+     file_move 取 dirs[0] = **Desktop**
+     file_move(source=<Downloads/c.txt>, dest="不存在的目录")
+         -> success=True, summary 含"本来就在"
+     即：用户说了一个我不认识的位置，文件**被判断成原地/或挪到 Desktop 并报成功**。
+   `dest="下载"` 同样命中（白名单根名是英文 Downloads，中文别名认不出）：
+     dest='Desktop'                -> Desktop
+     dest='下载'                    -> Desktop      <<< 用户要 Downloads
+     dest='软件归档'                  -> Desktop
+     dest='C:\Windows\System32'    -> Desktop（但守卫 check() 会先拦下这条绝对路径）
+   守卫只拦"白名单外的绝对路径"，**拦不住"认不出的相对名字"** —— 实测
+     guard.check("file_move", {dest: r"C:\Windows\System32"}) -> rejected=True
+     guard.check("file_move", {dest: "下载"})                  -> rejected=False
+
+C. `preview()` 与 `execute()` 对同一份参数给出不同结论（确认流程撒谎）
+     参数 {dirs:'Downloads', pattern:'*.txt'}：
+        preview : '找到 3 个文件（c.txt、a.txt、b.txt，共 3 B）'   ← 扫了四个目录
+        execute : success=False, '参数错误 [file_delete].dirs: 类型错误：期望 array，收到 str'
+     用户看到"要删 3 个"，点确认后一个都不会删；反过来若预览偏小则更危险。
+
+D. `file_delete(targets=<str>)` 的行为（澄清旧记录的担心）
+     _collect_targets({'targets': 'C:\\x\\a.txt'})  -> []
+     _collect_targets({'targets': ['C:\\x\\a.txt']}) -> ['C:\\x\\a.txt']
+     注册表：success=False, '期望数组，收到字符串…'
+   **字符串是被整条忽略，不是被拆成多个待删目标** —— 旧的担心（"字符串拆成多目标"）
+   没有发生；真实风险是"目标被静默丢掉/范围被换掉"。
+
+【三】处置（按 p4-plan.md 风险条 R4：显式拒绝 > 静默转换）
+--------------------------------------------------------------
+1. `agent/tools/base.py::_validate_field`
+   为 `array` 收字符串单开一条分支，文案**可照抄**：
+     '期望数组，收到字符串 'Downloads'；即使只有一个值也请写成数组，例如 ["Downloads"]'
+   逗号串走同一条分支 —— **不拆**（"把一句话拆成多个待删目标"是最危险的宽松转换）。
+   注：此分支只改文案，不改变原有拒绝行为（通用类型分支本来就会拒）。
+
+2. `agent/tools/file_tools.py::_resolve_dirs` —— 兜底收窄
+   | 入参 | 改前 | 改后 |
+   |------|------|------|
+   | None / [] | 默认四目录 | 默认四目录（不变） |
+   | 字符串 | 逐字符 → 默认四目录 | **抛 ParamError** |
+   | 列表全认不出 | 默认四目录 | **抛 ParamError** |
+   | 列表部分可识别 | 用可识别的 | 用可识别的（不变） |
+   `None`（用户没说）与"说了但我不认识"从此**不再共用同一个出口**。
+
+3. 新增 `_FileToolBase._dirs_or_error(raw) -> (dirs, err)`
+   技术原因写日志、给用户一句能照做的话（「「X」这个位置我没听懂哦，我只能操作：…」）。
+   file_search / file_list / file_move / file_delete 四处统一改用它。
+
+4. `file_move` 不再取 `dirs[0]` 顶替 —— 目标目录解析不出来就明确拒绝，绝不替用户挑一个。
+
+5. `file_delete._collect_targets` 无法确定搜索范围时抛 `ToolError`（带 user_message），
+   `execute` 转成可读失败。**绝不在"不知道在哪儿删"的情况下默认四目录照常删。**
+
+6. `agent/pipeline.py::_tool_preview` 先 `validate_params` 再 `preview`：
+   参数不合法 → 不给预览（与"执行必然失败"结论一致），消除"确认范围撒谎"。
+
+【四】契约变更的透明记录（两处既有测试被改）
+--------------------------------------------------------------
+两处旧用例**把缺陷钉成了期望行为**，本次改为钉住新契约（断言更严，不是放宽）：
+
+  · tests/agent/test_edge_cases.py::test_resolve_dirs_all_invalid_falls_back
+      旧：`_resolve_dirs([""])` 断言 `sandbox in dirs`（回退默认）
+      新：重命名 test_resolve_dirs_all_invalid_is_rejected，断言抛 ParamError 且文案含"不认识"
+  · tests/agent/test_edge_cases.py::test_move_unknown_dest_dir_falls_back_default
+      旧：`dest="不存在的目录"` 断言 success=True 且"本来就在"
+      新：重命名 test_move_unknown_dest_dir_is_rejected，断言 success=False、
+          摘要含"没听懂"、且**源文件仍在原处**（拒绝时绝不动文件）
+
+另新增 tests/agent/test_list_param_strict.py（42 项），覆盖：
+  · 四态 list / str / None / 逗号串 各自的确定行为
+  · 字符串与逗号串给出"写成数组"的具体示例
+  · 全部认不出 → 拒绝；部分可识别 → 用可识别的；重复项与"白名单里但盘上不存在"
+  · 范围不被扩大（点名 Downloads 只得 c.txt；删除一个都不删）
+  · file_move：三种认不出的 dest 全部拒绝且文件未被移动，且**不得出现在 Desktop**
+  · validate_params 集中校验（含"显式 null 视为未填"的回归保护）
+  · preview 与 execute 结论一致（双向：非法→无预览，合法→有预览且数目相符）
+
+【五】门禁结果
+--------------------------------------------------------------
+P4-G1 全量回归   : 2558 passed / 1 skipped / 0 failed   （B2 前 2520）
+P4-G2 覆盖率     : TOTAL 7164 语句 / 0 未覆盖 / 100%
+                   —— 中途曾出现 2 处未覆盖（file_tools.py:195/475），
+                      按"任一项回退即停下修好"补了 3 个真实用例，**未加任何屏蔽**
+P4-G3 端到端     : P1 18/18 · P3 44/44 · 指标 8/8
+pragma 清单      : 仍为 5 处（agent/seams/planner.py:88、agent/tools/browser_tools.py:121、
+                   agent/tools/productivity_tools.py:91、agent/tracker.py:229、
+                   core/kernel/loader.py:251）—— 未新增
+
+【六】仍然没做的（如实登记）
+--------------------------------------------------------------
+· `preview()` 本身仍未做类型校验 —— 修的是调用方（pipeline）。若有第三个调用方
+  直接调 `tool.preview(bad_params)`，仍可能算出与执行不一致的范围。
+· `dirs` 的中文别名（"下载"/"文档" 等）在白名单根名是英文时**依然认不出**，
+  现在表现为明确拒绝（而不是静默走去 Desktop）。要不要支持中文别名是**产品决策**，
+  未擅自加（加别名会改变"哪些目录可被指代"，属于安全面变更）。
+· 现允许"列表部分可识别 → 用可识别的"；严格一点的取向是"任一项认不出就整条拒绝"。
+  保留现状是因为它不影响写操作（file_move 恒为单元素列表），且既有用例钉着它。

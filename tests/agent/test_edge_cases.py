@@ -147,15 +147,41 @@ class TestFileDirResolution:
         dirs = tool._resolve_dirs([str(outside), "Desktop"])
         assert dirs == [sandbox]
 
-    def test_resolve_dirs_all_invalid_falls_back(self, guard, sandbox):
-        """全部非法时回退默认目录"""
+    def test_resolve_dirs_all_invalid_is_rejected(self, guard, sandbox):
+        """全部无法识别时**明确拒绝**，不再静默回退默认目录（P4-B2 契约变更）
+
+        原用例名 `test_resolve_dirs_all_invalid_falls_back`，断言 `sandbox in dirs`
+        —— 它把"回退默认目录"钉成了期望行为。但那个兜底正是缺陷本身：
+        `None`（用户没说）与"用户说了但我不认识"共用同一个出口，于是
+        **写操作的目标会被静默换掉**（`file_move(dest="不存在的目录")` →
+        取默认四目录的第一个 = Desktop → 文件挪到桌面还报成功）。
+        按 p4-plan.md 的风险条 R4「显式拒绝 > 静默转换」，此处改为钉住拒绝行为。
+        这不是放宽断言，而是把断言换成**更严**的契约。
+        """
         tool = FileListTool(guard)
-        dirs = tool._resolve_dirs([""])
-        assert sandbox in dirs
+        with pytest.raises(ParamError) as ei:
+            tool._resolve_dirs([""])
+        assert "不认识" in str(ei.value)
+
+    def test_resolve_dirs_string_is_rejected(self, guard, sandbox):
+        """字符串入参明确拒绝（含逗号串），绝不逐字符迭代（P4-B2 / 缺陷 17b）"""
+        tool = FileSearchTool(guard)
+        for bad in ("Desktop", "Downloads", "Desktop,Documents", "下载"):
+            with pytest.raises(ParamError) as ei:
+                tool._resolve_dirs(bad)
+            assert "期望数组" in str(ei.value)
+
+    def test_resolve_dirs_unknown_list_entry_is_rejected(self, guard, sandbox):
+        """列表里认不出来的名字同样拒绝（中文别名「下载」不是白名单根名）"""
+        tool = FileSearchTool(guard)
+        with pytest.raises(ParamError) as ei:
+            tool._resolve_dirs(["下载"])
+        assert "不认识" in str(ei.value)
 
     def test_resolve_dirs_empty_uses_default(self, guard, sandbox):
-        """空列表用默认目录"""
+        """空列表用默认目录（"未指定"是唯一允许兜底的情形）"""
         assert FileListTool(guard)._resolve_dirs([]) == [sandbox]
+        assert FileListTool(guard)._resolve_dirs(None) == [sandbox]
 
     def test_scan_include_dirs(self, guard, sandbox):
         """扫描可包含子目录"""
@@ -393,12 +419,20 @@ class TestFileToolErrorPaths:
         r = FileMoveTool(guard).execute({"source": "*报告*", "dest": "Desktop"})
         assert r.emotion == "think"
 
-    def test_move_unknown_dest_dir_falls_back_default(self, guard, sandbox):
-        """无法解析的目标目录 → 回退默认目录（源已在默认目录 → 视为原地）"""
+    def test_move_unknown_dest_dir_is_rejected(self, guard, sandbox):
+        """无法识别的目标目录 → **明确拒绝**，绝不替用户挑一个默认目录（P4-B2）
+
+        原用例名 `test_move_unknown_dest_dir_falls_back_default`，断言
+        `r.success is True` 且 "本来就在" —— 它钉住的是"回退默认目录后当成原地"。
+        在本 fixture 里白名单只有一个 `sandbox`，所以回退恰好等于源目录、看起来无害；
+        但真实环境有四个目录，`dirs[0]` 是 **Desktop**：一句"我没听懂"会变成
+        "文件被挪到桌面了，且报成功"。按 R4「显式拒绝 > 静默转换」改为钉住拒绝。
+        """
         mk(sandbox, "a.txt")
         r = FileMoveTool(guard).execute({"source": "a.txt", "dest": "不存在的目录"})
-        assert r.success is True
-        assert "本来就在" in r.summary
+        assert r.success is False
+        assert "没听懂" in r.summary
+        assert (sandbox / "a.txt").exists(), "拒绝时绝不能动文件"
 
     def test_move_oserror(self, guard, tmp_path):
         """移动 IO 错误"""

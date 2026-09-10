@@ -23,8 +23,8 @@
     "P4-A2": "done",
     "P4-A3": "delivered_pending_human",
     "P4-B1": "pending",
-    "P4-B2": "pending",
-    "P4-B3": "pending",
+    "P4-B2": "done",
+    "P4-B3": "done",
     "P4-B4": "partially_done",
     "P4-B5": "pending",
     "P4-C1": "pending",
@@ -143,6 +143,7 @@
       ],
       "evidence": "docs/agent/evidence/p4/list_param.txt",
       "risk": "R4：安全路径判定改动，改错方向后果比现状更严重 → 取显式拒绝而非自动转换",
+      "outcome": "done（2026-09-11）。原记录的『静默回退默认目录』方向对但可达路径判断不完整：经 ToolRegistry 时字符串**本来就被 validate_params 拒绝**，缺陷实际可达于 preview()（pipeline 绕过校验）、直接 execute()、以及『类型正确的列表但元素认不出』三条路。实测另外抓到一处更严重的同类缺陷：file_move(dest='不存在的目录'/'下载'/'软件归档') → 兜底四目录 → 取 dirs[0]=Desktop → **文件被挪到桌面并报成功**（守卫只拦白名单外绝对路径，拦不住认不出的相对名字）。处置：_resolve_dirs 兜底收窄到只剩『未指定』（None/[]），其余一律抛 ParamError；新增 _dirs_or_error 给用户可照做的文案；file_move 不再取 dirs[0] 顶替；_collect_targets 无法确定范围时抛 ToolError；pipeline._tool_preview 先 validate_params 再 preview（消除『确认范围撒谎』）。两处把缺陷钉成期望的旧用例改为钉住新契约（断言更严，非放宽）。新增 tests/agent/test_list_param_strict.py 42 项。门禁：G1 2558 passed/1 skipped/0 failed、G2 7164 语句 100%（中途出现 2 处未覆盖，补 3 个真实用例修好，未加屏蔽）、G3 P1 18/18 + P3 44/44 + 指标 8/8。",
       "blocked_by": ["P4-A1"]
     },
     {

@@ -229,6 +229,22 @@ class BaseTool(ABC):
             py_type = type_map[expected]
             if expected == "integer" and isinstance(value, bool):
                 raise ParamError(self.name, "期望整数，收到布尔值", key)
+            # `array` 收到字符串要**显式拒绝**，且文案要能照做（P4-B2 / 缺陷 17b）。
+            #
+            # 为什么单独开一条分支而不是靠下面通用的类型报错：字符串是**可迭代**的，
+            # 一个 "Downloads" 传进 `for item in dirs` 会被逐字符拆开，最后
+            # "一个字符都匹配不上" → 调用方静默回退默认目录。也就是说
+            # 类型错了却**不报错**，只是范围悄悄变大（实测见 docs/agent/p4-plan.md §B2）。
+            # 通用文案只说"期望 array，收到 str"，看不懂的人会去猜；这里直接给出
+            # 一个可照抄的写法。逗号串（"Downloads,Documents"）走同一条分支 ——
+            # **不拆**，因为"把一句话拆成多个待删目标"正是最危险的宽松转换。
+            if expected == "array" and isinstance(value, str):
+                raise ParamError(
+                    self.name,
+                    f'期望数组，收到字符串 {value!r}；即使只有一个值也请写成数组，'
+                    f'例如 ["{value}"]',
+                    key,
+                )
             if not isinstance(value, py_type):
                 raise ParamError(
                     self.name,

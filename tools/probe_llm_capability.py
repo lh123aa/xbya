@@ -49,14 +49,35 @@ def skipped(label, why=""):
 
 
 def _build_engine(args):
-    """按参数构造 LLM 引擎（不打印任何密钥）"""
+    """按参数构造 LLM 引擎（不打印任何密钥）
+
+    `universal` 模式**从 config.yaml 读项目真实配置**（含 api_key），
+    只覆盖显式给出的字段 —— 否则会退到环境变量、拿不到项目在用的 key，
+    探测结论就与真实运行无关了。
+    """
     if args.engine == "ollama":
         from plugins.llm.ollama.plugin import OllamaLLM
         return OllamaLLM(base_url=args.base_url or "http://localhost:11434",
                          model=args.model or "qwen2.5:1.5b")
-    # universal：沿用 config.yaml 的配置（含 api_key），只覆盖显式给出的字段
+
     from plugins.llm.openrouter.plugin import UniversalLLM
     kw: dict = {}
+    try:
+        import yaml
+        cfg = yaml.safe_load((PROJECT / "config.yaml").read_text(encoding="utf-8"))
+        params = ((cfg.get("plugins") or {}).get("llm") or {}).get("params") or {}
+        # 只透传插件认识的参数；api_key 只进内存，绝不打印
+        # ⚠️ `model` 必须在这一串里。第一版漏了它，于是探针自报"用 config.yaml
+        # 里的云端配置"，实际用的是插件默认模型（llama-3.1-8b-instant）——
+        # **探针没有在测它声称测的东西**，而输出看不出来（P4-B4 第 2 处自查修掉）。
+        for k in ("api_key", "model", "base_url", "provider", "system_prompt",
+                  "max_tokens", "temperature", "fallback_api_key",
+                  "fallback_base_url", "fallback_model"):
+            if params.get(k) not in (None, ""):
+                kw[k] = params[k]
+    except Exception as e:
+        print(f"[注意] 读 config.yaml 失败，改用环境变量: {type(e).__name__}: {e}")
+
     if args.base_url:
         kw["base_url"] = args.base_url
     if args.model:
@@ -139,7 +160,13 @@ def main() -> int:
         stack = build_agent_stack(cfg, bus)
         try:
             reg = stack.registry
-            ctx = {"available_actions": reg.names(),
+            # ⚠️ 必须在 dispose() **之前**把合法工具名快照下来。
+            # 第一版在 finally 之后才调 `reg.names()` 去比对，而 dispose() 会卸载全部插件，
+            # 于是注册表变成空集 ⇒ **每一个工具名都被判成"非法"**，
+            # 探针稳定输出一条假 FAIL（"非法=['file_search','file_move','file_delete']"），
+            # 而这三个名字明明都在 21 个工具里（P4-B4 第 1 处自查修掉）。
+            valid_names = set(reg.names())
+            ctx = {"available_actions": sorted(valid_names),
                    "tool_schemas": reg.to_llm_schemas(),
                    # 与真实规划器一致：把白名单目录注入提示词（缺它模型会编造路径）
                    "dir_aliases": {p.name: str(p) for p in stack.safety.whitelist_roots()}}
@@ -156,7 +183,7 @@ def main() -> int:
             check(False, "拆出多步计划", f"{dt1:.0f}ms 内返回 None（模型没给出合法 JSON）")
         else:
             names = plan.action_names()
-            unknown = [a for a in names if a not in set(reg.names())]
+            unknown = [a for a in names if a not in valid_names]
             print(f"  {dt1:.0f}ms  来源={plan.source} 步数={len(plan.steps)}")
             for s in plan.steps:
                 print(f"    {s.step_id}: {s.action}({s.params})")
