@@ -1,6 +1,6 @@
 # 关卡: G8 F3 真实 LLM 全链路
 # 命令: C:\Python312\python.exe tools/verify_f3_real_llm.py
-# 用时: 93.3s
+# 用时: 117.0s
 # 退出码: 0
 # 外部依赖: 是
 ------------------------------------------------------------------------
@@ -8,7 +8,7 @@
 F3 真实 LLM 端到端验证（真实 App + 真实 API）
 ========================================================================
 
-应用初始化: True  (8.0s)
+应用初始化: True  (4.9s)
 [PASS] 应用初始化成功
 [PASS] Agent 层已装配
 
@@ -26,8 +26,8 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
   内层 LLM 路由 = LLMRouter
 [PASS] LLM 路由已注入（非 None）
 [PASS] 注入的正是 app.route_with_tools（真实 API）  → XiaoyiApp.route_with_tools
-  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  972ms
-  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  753ms
+  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  815ms
+  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  1063ms
   LLM 命中计数: 0 → 2
 [PASS] LLM 路由**确实被触发**（不是纯规则兜底）  → llm_hits 0→2
 
@@ -35,17 +35,17 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 [PASS] 摘要器存在
   模板摘要: '找到 6 个文件（安装包_1.exe、安装包_2.exe、安装包_3.exe 等 6 个）'
   should_refine: True
-  LLM 润色 (1450ms): '嘿嘿，已找到 6 个文件哦，分别是 安装包_1.exe、安装包_2.exe、安装包_3.exe、安装包_4.exe、安装包_5.exe、安装包_6.exe'
-[PASS] 润色产出了文本  → 77 字
+  LLM 润色 (938ms): '已找到 6 个文件，分别是安装包_1.exe、安装包_2.exe、安装包_3.exe、安装包_4.exe、安装包_5.exe 等。'
+[PASS] 润色产出了文本  → 65 字
 [PASS] 润色结果与模板不同
-[PASS] 润色在 30s 内返回  → 1450ms
+[PASS] 润色在 30s 内返回  → 938ms
 
 [F3-c] LLM 规划器（规则配方认不出的多步目标）
-  第1次 (3805ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
-  第2次 (3988ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
-  第3次 (20006ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
-  LLM 规划成功率: 0/3（其中 1 次是撞超时上界的）
-  ⚠️ 抓到 1 条 LLM 配额/限流告警（429），例如：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageat
+  第1次 (19603ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  第2次 (15152ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
+  第3次 (20013ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  LLM 规划成功率: 0/3（其中 2 次是撞超时上界的）
+  ⚠️ 抓到 3 条 LLM 配额/限流告警（429），例如：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageat
 [SKIP] LLM 拆出了多步计划（3 次内至少 1 次）  → 3 次全部失败，但抓到 429/限流：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in o —— **外部配额（免费档 8000 TPM），不是本层结论**；等一分钟再跑，或换已充值的 key
 
 [F3-e] 提示词含本机真实目录（确定性，不调 LLM）
@@ -56,10 +56,12 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 
 [F3-d] LLM 提议的危险计划 → 安全层拦截（真实管线全链路）
   第1轮事件流: ['pipeline.chat', 'speech.recognized']
-  第2轮事件流: ['feedback.ack', 'plan.started', 'speech.recognized', 'plan.step.done', 'feedback.confirm']
-[SKIP] 计划既未收尾也未回退（事件流见上）  → 事件流为空且抓到 429/限流：管线未被真正驱动，**判不出本层好坏**；等配额恢复再跑
+  第2轮事件流: ['pipeline.chat', 'speech.recognized']
+  第3轮事件流: ['pipeline.chat', 'speech.recognized']
+[PASS] 退回闲聊（未执行任何步骤）
 
-[配额观察] 共抓到 2 条 429/限流告警：
+[配额观察] 共抓到 6 条 429/限流告警：
+  · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   → 凡受此影响的断言都已归入 [SKIP]，**没有**被算成通过
@@ -67,9 +69,8 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 ========================================================================
 pygame 2.6.1 (SDL 2.28.4, Python 3.12.8)
 Hello from the pygame community. https://www.pygame.org/contribute.html
-F3 结果：16/16 通过，0 失败，2 跳过（共 18 项）
+F3 结果：17/17 通过，0 失败，1 跳过（共 18 项）
   [SKIP] LLM 拆出了多步计划（3 次内至少 1 次）
-  [SKIP] 计划既未收尾也未回退（事件流见上）
 ========================================================================
 C:\Python312\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   import pkg_resources
