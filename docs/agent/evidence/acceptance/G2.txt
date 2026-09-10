@@ -1,6 +1,6 @@
 # 关卡: G2 全量回归
 # 命令: C:\Python312\python.exe -m pytest tests/ -q
-# 用时: 76.3s
+# 用时: 69.3s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -53,4 +53,4 @@ conftest.py:113
     if isinstance(obj, HotkeyManager):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-2508 passed, 1 skipped, 3 warnings in 73.08s (0:01:13)
+2508 passed, 1 skipped, 3 warnings in 66.44s (0:01:06)
