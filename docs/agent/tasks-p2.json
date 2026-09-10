@@ -1,0 +1,138 @@
+{
+  "project": "欣雅 Agent 层",
+  "version": "1.0",
+  "phase": "P2",
+  "generated_at": "2026-09-10",
+  "methodology": "驾驭工程（Harness Engineering）— 压缩模式",
+  "scope": "P2 技术债偿还：D2 确认语 LRU 动态缓存 / D4 摘要器异步化 / D1 指代消解持久化",
+  "out_of_scope": [
+    "多用户隔离（D3）— 框架已支持 ctx.fork()，产品无需求前不启用",
+    "多步任务规划（D5）— 归入 P3 planner seam",
+    "长期记忆 / 向量 DB — 归入 P3",
+    "Computer Use / DSH 集成 / 多设备协同 — 归入 v3.0 产品愿景",
+    "P1 遗留缺陷 F1（间歇性崩溃）/ F2（loader 未接入）— 属 P1 收尾，另行排期"
+  ],
+  "total_tasks": 20,
+  "estimated_hours": 8.0,
+  "status": {
+    "P2-1": "done",
+    "P2-2": "done",
+    "P2-3": "done",
+    "note": "P2 全部完成：P2-1 交付 33 项测试、P2-3 交付 47 项、P2-2 交付 26 项；覆盖率 4366 语句 / 0 未覆盖 / 100%；全量 1579 passed（连续 12 轮 exit=0）；端到端 18/18；指标脚本 8/8"
+  },
+  "principles": [
+    "不引入新运行时依赖（沿用 stdlib + 现有依赖）",
+    "向后兼容：P1 已有 API 签名不变，新增能力以可选参数/新方法形式提供",
+    "每项完成后覆盖率必须保持 100%，不得以 pragma 遮盖新增代码",
+    "所有持久化路径必须经白名单校验，且写入用户目录之外的项目 data/ 下",
+    "所有新增后台线程必须可取消、可 join，不得复现 D7 类退出竞态"
+  ],
+  "phases": [
+    {
+      "id": "P2-1",
+      "name": "确认语 LRU 动态缓存",
+      "repays": "D2",
+      "priority": "P0",
+      "hours": 1.5,
+      "problem": "AckCache 只预热固定短语，长尾确认语（如含文件预览的确认问句）每次都要实时合成，首字延迟 ~1.2s",
+      "goal": "长尾确认语首次合成后进入有界 LRU，重复出现直接命中；命中延迟 <10ms",
+      "deliverables": [
+        "services/ack_cache.py 增加有界 text→audio LRU（OrderedDict 实现）",
+        "get_or_synthesize(text, synthesize) → Optional[bytes]：命中直接返回，未命中合成后入栈",
+        "LRU 淘汰策略：超容量淘汰最久未用；命中时 move_to_end 提升优先级",
+        "统计接口 stats()：hits / misses / evictions / size / maxsize",
+        "线程安全：写入与顺序升级在锁内完成；读取保持无锁快照",
+        "配置项 agent.pipeline.ack_lru_size（默认 64；0 表示关闭动态缓存）",
+        "管线接入：确认问句经 LRU 路径合成，重复确认第二次起命中",
+        "pipeline.stats() 暴露 ack_lru_hits / ack_lru_misses"
+      ],
+      "acceptance": [
+        "同一长尾短语第二次调用返回缓存字节，synthesize 调用次数为 1",
+        "不同短语超过 maxsize 后，最久未用者被淘汰且 evictions 计数正确",
+        "maxsize=0 时退化为直通（每次都调 synthesize，不缓存）",
+        "synthesize 返回 None/抛异常时不写入缓存，且不影响后续调用",
+        "并发 8 线程各取 50 次不产生异常，最终 size <= maxsize",
+        "clear() 同时复位 LRU 与统计",
+        "重复删除确认场景：第二次确认的 ack 耗时 <10ms"
+      ],
+      "tests": "tests/agent/test_ack_lru.py"
+    },
+    {
+      "id": "P2-2",
+      "name": "摘要器异步化",
+      "repays": "D4",
+      "priority": "P0",
+      "hours": 2.5,
+      "depends_on": ["P2-1"],
+      "problem": "HybridSummarizer 对复杂结果同步等 LLM 润色，结果播报被拖后 ~1s；用户听到结果的时刻取决于 LLM 响应速度",
+      "goal": "先播模板摘要（立即），LLM 润色完成后通过 feedback.refine 事件补播；LLM 慢或失败不影响首次播报",
+      "deliverables": [
+        "新增事件类型 feedback.refine",
+        "管线 _emit_result 立即用模板摘要发射 feedback.result",
+        "需要润色的结果：把润色任务提交到独立线程（不占用工具执行线程池，避免排队拖慢后续指令）",
+        "润色完成 → 发射 feedback.refine（含 request_id / summary / 原 action）",
+        "润色失败、超时、返回空、与模板相同 → 静默不发 refine",
+        "dispose()/打断时取消未完成润色任务，线程 join，不泄漏",
+        "摘要器新增 should_refine(action, result) 判定接口（模板摘要器返回 False）",
+        "配置项 agent.summarizer.async_refine（默认 true，false 时回退 P1 同步行为）",
+        "pipeline.stats() 暴露 refined / refine_skipped 计数"
+      ],
+      "acceptance": [
+        "慢 LLM（sleep 1s）场景下 feedback.result 在 100ms 内到达",
+        "feedback.refine 随后到达且文本与模板摘要不同",
+        "LLM 抛异常 / 返回 None / 超时 → 无 refine 事件，无异常日志升级为 error",
+        "async_refine=false 时行为与 P1 一致（result 直接含润色文本，无 refine 事件）",
+        "连续 3 条指令不因润色线程排队而互相延迟",
+        "stack.dispose() 后无残留非 daemon 线程"
+      ],
+      "tests": "tests/agent/test_async_refine.py"
+    },
+    {
+      "id": "P2-3",
+      "name": "指代消解持久化",
+      "repays": "D1",
+      "priority": "P1",
+      "hours": 2.0,
+      "depends_on": [],
+      "problem": "EntityTracker 纯内存，重启后「那个文件」「第一个」无法解析，用户需要重复完整指令",
+      "goal": "实体栈落盘到项目 data/ 下，重启后恢复；损坏文件不阻塞启动",
+      "deliverables": [
+        "EntityTracker.to_dict() / from_dict() 序列化",
+        "持久化后端：JSON 文件（默认 data/agent_entities.json）",
+        "原子写：写临时文件 + os.replace，避免半截文件",
+        "加载时机：AgentStack.start()；保存时机：变更后节流（默认 1s）+ dispose() 强制落盘",
+        "容错：文件缺失/损坏/JSON 非法/字段类型错 → 空栈 + warning，不抛异常",
+        "容量裁剪：落盘前按现有 FIFO 容量截断，只存 name/path/mtime/is_dir，不存文件内容",
+        "配置项 agent.pipeline.tracker_persist（默认 true）+ tracker_store（路径）",
+        "stats() 暴露 tracker_restored 条数"
+      ],
+      "acceptance": [
+        "构造 3 个文件 → dispose → 新建 tracker 从同一路径加载 → 「第二个」仍解析为第 2 个",
+        "写入损坏 JSON → 加载返回空栈且不抛异常",
+        "写入合法 JSON 但字段类型错（如 files 为字符串）→ 空栈",
+        "超过 FIFO 容量的条目在落盘前被裁掉",
+        "落盘文件位于项目 data/ 下，不写入用户桌面/文档",
+        "dispose() 后文件存在且内容可被 json.loads 解析",
+        "禁用 tracker_persist 时不产生任何文件"
+      ],
+      "tests": "tests/agent/test_tracker_persist.py"
+    }
+  ],
+  "execution_protocol": {
+    "order": "P2-1 → P2-3 → P2-2（P2-2 改动管线最深，放最后以降低合并风险）",
+    "per_task_done_definition": [
+      "python -m py_compile 通过",
+      "对应测试用例通过",
+      "全量回归 pytest tests/ 零失败",
+      "kernel+agent 覆盖率保持 100%",
+      "AGENTS.md 债务表对应条目更新",
+      "关键流程脚本验证（tools/measure_acceptance_metrics.py 可扩展）"
+    ],
+    "blocking_report_triggers": [
+      "需要引入未登记的新依赖",
+      "需要放宽安全边界",
+      "现有测试出现非预期失败",
+      "单任务耗时超预估 3 倍"
+    ]
+  }
+}

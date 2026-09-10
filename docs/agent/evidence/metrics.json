@@ -1,0 +1,66 @@
+[
+  {
+    "id": "M1",
+    "name": "规则路由准确率",
+    "target": ">90%",
+    "measured": "100.0% (73/73)",
+    "verdict": "PASS",
+    "note": "action 错 0 条，参数错 0 条"
+  },
+  {
+    "id": "M2",
+    "name": "规则路由延迟",
+    "target": "P95 <10ms",
+    "measured": "P50 0.036ms / P95 0.050ms / P99 0.077ms (n=365)",
+    "verdict": "PASS",
+    "note": ""
+  },
+  {
+    "id": "M3",
+    "name": "感知延迟（首次反馈→确认语）",
+    "target": "<1.5s",
+    "measured": "P50 1.8ms / max 2.0ms (n=4)",
+    "verdict": "PASS",
+    "note": "ack 与 submit 并行发射，确认语走预热缓存"
+  },
+  {
+    "id": "M4",
+    "name": "总延迟（结果播报）",
+    "target": "<3s",
+    "measured": "P50 2.8ms / max 10.5ms (n=4)",
+    "verdict": "PASS",
+    "note": ""
+  },
+  {
+    "id": "M5",
+    "name": "误操作率（非法路径拒绝率）",
+    "target": "拦截率 100% / 白名单内不误拒",
+    "measured": "拒绝 8/8；白名单内放行=是",
+    "verdict": "PASS",
+    "note": "漏放: 无；异常类型异常: 无"
+  },
+  {
+    "id": "M6",
+    "name": "删除可恢复率",
+    "target": "100%（无永久删除分支）",
+    "measured": "永久删除调用=无；send2trash=有；实调用次数=1",
+    "verdict": "PASS",
+    "note": "源码审查 + 运行时验证；实际入回收站行为由 p1_acceptance_smoke.py 场景 4 端到端确认"
+  },
+  {
+    "id": "M7",
+    "name": "工具执行成功率（真实执行子集）",
+    "target": ">95%",
+    "measured": "100% (10/10)",
+    "verdict": "PASS",
+    "note": "失败: 无；另 mock 验证 3/3 ；未真实执行: open_app（会弹窗）、screenshot（会写图片）、web_*（会联网）"
+  },
+  {
+    "id": "M10",
+    "name": "插件可卸载",
+    "target": "卸载后服务不可用",
+    "measured": "load=True 载后可用=True unload=True 卸后可用=False",
+    "verdict": "PASS",
+    "note": "注：loader 已实现且行为正确，但尚未被 build_agent_stack 使用（配置驱动装配未接入）"
+  }
+]

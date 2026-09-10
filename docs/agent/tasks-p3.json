@@ -1,0 +1,365 @@
+{
+  "project": "欣雅 Agent 层",
+  "version": "1.0",
+  "phase": "P3",
+  "generated_at": "2026-09-10",
+  "methodology": "驾驭工程（Harness Engineering）— 压缩模式",
+  "scope": "P3 能力扩展：D5 多步任务规划（planner seam）+ 长期记忆（embedder seam + memory seam + SQLite/FTS5/向量检索 + 3 个记忆工具）",
+  "out_of_scope": [
+    "多用户隔离（D3）— 框架已支持 ctx.fork()，产品无需求前不启用",
+    "Computer Use / 屏幕理解 / DSH 集成 / 多设备协同 — 归入 v3.0 产品愿景",
+    "真实神经嵌入做默认值 — 需下载模型，与「离线可用」冲突；已作为 st Provider 可选",
+    "记忆的端到端加密 — 只做「不落用户目录 + 不记敏感信息」两条硬规则",
+    "P1 遗留：5 项人工语音验证 / 真实 GUI 启动 / 真实 LLM API — 需真机与人，另行排期",
+    "D7 间歇性崩溃正式关闭 — 修后 22 轮 0 次，P3 期间继续累计轮次"
+  ],
+  "total_tasks": 26,
+  "estimated_hours": 14.0,
+  "status": {
+    "P3-A1": "done",
+    "P3-A2": "done",
+    "P3-A3": "done",
+    "P3-A4": "done",
+    "P3-A5": "done",
+    "P3-B1": "done",
+    "P3-B2": "done",
+    "P3-B3": "done",
+    "P3-B4": "done",
+    "P3-C1": "done",
+    "P3-D1": "done",
+    "note": "P3 全部完成（关卡 P3-G0~G5 全通过，见 AGENTS.md §16）：planner seam + 3 个 Provider + 规则路由 plan 意图 + 管线顺序执行/确认挂起续跑/占位符传递/中断取消；embedder seam + memory seam + SQLite FTS5 中文分词 + 向量 RRF 融合 + 3 个记忆工具；覆盖率 6602 语句 / 0 未覆盖 / 100%；全量 2139 passed / 1 skipped / exit=0；端到端 p3_acceptance_smoke 43/43、p1_acceptance_smoke 18/18（未回退）、measure_acceptance_metrics 8/8"
+  },
+  "verification": {
+    "full_regression": "2139 passed, 1 skipped, exit=0",
+    "coverage": "6602 statements, 0 missed, 100%",
+    "coverage_command": "pytest tests/kernel tests/agent --cov=core.kernel --cov=agent --cov=services.ack_cache --cov-report=term-missing",
+    "new_tests": 522,
+    "test_counts": {
+      "tests/agent/test_planner.py": 218,
+      "tests/agent/test_memory_store.py": 173,
+      "tests/agent/test_memory_tools.py": 62,
+      "tests/agent/test_memory_wiring.py": 68
+    },
+    "smoke": {
+      "tools/p3_acceptance_smoke.py": "43/43",
+      "tools/p1_acceptance_smoke.py": "18/18",
+      "tools/measure_acceptance_metrics.py": "8/8"
+    }
+  },
+  "principles": [
+    "不引入新运行时依赖（沿用 stdlib + 现有依赖；sqlite-vec / sentence-transformers 已装，但一律作为「可用则加速、不可用则降级」的可选路径）",
+    "向后兼容：既有 seam 方法签名不变；新增能力以「可选参数 + 可选覆写」形式提供",
+    "每项完成后覆盖率必须保持 100%，不得以 pragma 遮盖新增代码",
+    "所有持久化路径必须避开用户四个白名单目录，写在项目 data/ 下",
+    "所有新增后台线程必须可取消、可 join，不得复现 D7 类退出竞态",
+    "规划器不得成为绕过安全确认的后门：每个步骤仍各自过 SafetyService.check()",
+    "记忆是增强而非依赖：记忆层整体失效时主流程不得受影响"
+  ],
+  "design_decisions": [
+    {
+      "id": "DD-1",
+      "question": "多步规划放在路由前还是路由后？",
+      "decision": "路由后。Router 契约仍是「一句话 → 一个 AgentCommand」不动，规则路由 100% 准确率不受扰动。",
+      "rationale": "把 Planner 塞进 Router 会污染已被 73 条测试集钉死的规则路由。改为：规则路由新增一个 plan 意图承接显式多步标记（「先…再…」），命中则转 Planner；未命中则 Planner 不参与，保持单步快路径。"
+    },
+    {
+      "id": "DD-2",
+      "question": "计划步骤并发执行还是顺序执行？",
+      "decision": "严格顺序执行。",
+      "rationale": "文件类步骤几乎必然有数据依赖（先搜到才能移），并发会引入 R3 竞态风险却换不来收益；且顺序执行让「遇确认挂起/恢复」的语义简单可验证。"
+    },
+    {
+      "id": "DD-3",
+      "question": "步骤间数据怎么传递？",
+      "decision": "参数里写占位符 ${步骤ID.字段}，由管线在提交该步前解析。",
+      "rationale": "显式优于隐式。整值占位符保留原生类型（列表仍是列表），嵌在文本中则字符串化；解析失败保留原文交由工具追问，不抛异常。"
+    },
+    {
+      "id": "DD-4",
+      "question": "默认嵌入器用神经模型还是本地哈希？",
+      "decision": "本地哈希（字符 n-gram + 词元带符号哈希 → 定长归一化向量）。sentence-transformers 作为可选 Provider。",
+      "rationale": "神经模型需下载，与「任何机器上都可用」冲突（本机 HF 缓存里确认没有任何句向量模型）。哈希方案零依赖、离线、确定、跨进程稳定（blake2b 而非内置 hash()），代价是只能做词形相近匹配 —— 这个代价换来记忆功能永不因环境而失效。"
+    },
+    {
+      "id": "DD-5",
+      "question": "向量检索用 sqlite-vec 还是 Python 暴力比对？",
+      "decision": "两条后端都实现，config 可选，auto 时优先 sqlite-vec，失败自动降级 Python。",
+      "rationale": "记忆量级 10^3 时 Python 暴力比对已足够（<2ms），但量级增长后 sqlite-vec 是现成加速器且本机已装。降级路径必须存在，否则「扩展加载失败」会让整个记忆功能不可用。"
+    },
+    {
+      "id": "DD-6",
+      "question": "中文全文检索怎么过 FTS5？",
+      "decision": "不使用 FTS5 自带分词器切中文，改为自产 token 串（CJK 单字 + 相邻 bigram）存进 FTS 列，查询时同样切词后 OR 连接。",
+      "rationale": "FTS5 的 unicode61 把连续汉字当作一个词元，「桌面上的合同」会成为单一 token，检索「合同」永远命中不了。这是中文做 FTS5 必踩的坑。"
+    }
+  ],
+  "phases": [
+    {
+      "id": "P3-A1",
+      "name": "seam 契约：planner / memory / embedder",
+      "priority": "P0",
+      "hours": 2.0,
+      "problem": "D5 未偿还：管线只能执行单步指令，「整理并归档」类目标不支持；长期记忆完全没有接口定义。",
+      "goal": "三个能力接口先落地，作为后续全部 Provider 与 Consumer 的契约。",
+      "deliverables": [
+        "agent/seams/planner.py — PlannerService / Plan / PlanStep / PlanStatus",
+        "占位符解析 resolve_placeholders() / extract_field()（Provider 与 Consumer 共用）",
+        "Plan 的 is_multi_step / action_names / truncate / unknown_actions 自检方法",
+        "agent/seams/memory.py — MemoryService / MemoryItem / MemoryKind + 持久化字典协议",
+        "敏感信息判据 is_sensitive() / sensitive_reason()（含中文词，不用 \\b）",
+        "agent/seams/embedder.py — EmbedderService + normalize/dot/cosine/pack/unpack",
+        "pack/unpack 用 array('f')，不依赖 numpy"
+      ],
+      "acceptance": [
+        "三个 seam 均可导入，Service 子类无法直接实例化（内核约束）",
+        "整个占位符取值为单一占位符时保留原生类型（列表仍是列表）",
+        "占位符嵌在文本中时字符串化拼接",
+        "解析不出来时保留原文，不抛异常",
+        "${last.x} 指代前一步；${s1.0.path} 支持列表下标",
+        "「我的密码是abc」被判为敏感；「passwordless 登录」不误判",
+        "unpack 遇到非字节/长度不符/非法字节数一律返回零向量"
+      ],
+      "tests": "并入 tests/agent/test_planner.py 与 tests/agent/test_memory_store.py"
+    },
+    {
+      "id": "P3-A2",
+      "name": "规则路由新增 plan 意图",
+      "repays": "D5",
+      "priority": "P0",
+      "hours": 1.0,
+      "problem": "没有任何信号能把「先…再…」这类显式多步指令从单步指令里区分出来。",
+      "goal": "规则路由能识别显式多步标记并返回 action=plan，且不扰动既有的 73 条测试集。",
+      "deliverables": [
+        "agent/providers/router/rule_router.py 新增 plan 意图与关键词",
+        "多步标记与单步标记冲突时（如「先看看」）不得误判为 plan",
+        "describe_intents() 自动带出 plan（供 LLM 路由复用）"
+      ],
+      "acceptance": [
+        "「先找到合同再挪到归档」→ plan",
+        "既有 73 条测试集准确率仍为 100%，零回归",
+        "「先看看电脑状态」不被误判为 plan（多步标记需与第二个动作词共现）",
+        "plan 意图的 base_confidence 低于明确单步意图，避免抢走单步指令"
+      ],
+      "tests": "并入 tests/agent/test_router.py 与 tests/agent/test_planner.py"
+    },
+    {
+      "id": "P3-A3",
+      "name": "planner 三个 Provider",
+      "repays": "D5",
+      "priority": "P0",
+      "hours": 3.0,
+      "problem": "planner seam 只有接口，没有实现。",
+      "goal": "规则配方（<1ms）+ LLM 分解（1~3s）+ 混合（规则优先）三档，换实现只改配置。",
+      "deliverables": [
+        "agent/providers/planner/template_planner.py — 配方表驱动的规则规划器",
+        "agent/providers/planner/llm_planner.py — LLM 分解 + 严格校验（工具名白名单/步数上限/JSON 容错）",
+        "agent/providers/planner/hybrid_planner.py — 规则优先，未命中且有 LLM 才转 LLM"
+      ],
+      "acceptance": [
+        "TemplatePlanner 对每条配方都能产出 action 全部合法的计划",
+        "TemplatePlanner 只认识当前注册表里真实存在的工具（缺工具则不用该配方）",
+        "LLMPlanner 丢弃未知工具名步骤；全部非法时返回 None",
+        "LLMPlanner 对非 JSON / JSON 非对象 / steps 非列表 / 步骤缺 action 全部容错，不抛异常",
+        "LLMPlanner 对步骤数超上限做截断",
+        "HybridPlanner 在无 LLM 时等价于 TemplatePlanner",
+        "can_plan() 预判能挡掉纯闲聊，避免每句话都花 LLM 调用"
+      ],
+      "tests": "tests/agent/test_planner.py"
+    },
+    {
+      "id": "P3-A4",
+      "name": "管线多步执行",
+      "repays": "D5",
+      "priority": "P0",
+      "hours": 4.0,
+      "problem": "有了计划也没有东西去执行它。",
+      "goal": "管线能把一个 Plan 顺序执行完，逐步过安全检查，遇确认挂起并在用户确认后从断点续跑。",
+      "deliverables": [
+        "agent/pipeline.py — _execute_plan()：逐步提交、逐步安全校验、占位符解析",
+        "确认挂起/恢复：某步需确认时登记待确认项并挂起计划，confirm 后从该步续跑",
+        "取消/打断：cancel 或 SPEECH_INTERRUPTED 时终止整个计划",
+        "累计结果汇总：全部成功 / 部分失败中止 / 首步失败 三种收尾文案",
+        "聚合「操作预览」：确认问句里说明这是第几步、共几步、前面做了什么",
+        "新事件 plan.started / plan.step_done / plan.finished",
+        "统计：plans / plan_steps / plan_halted / plan_failed"
+      ],
+      "acceptance": [
+        "两步计划顺序执行，第二步参数里的 ${s1.paths} 被替换为第一步的真实产出",
+        "计划里任何一步被安全守卫拒绝时立即中止，且中止后的步骤一个都不执行",
+        "第二步需确认时：第一步已执行、第二步未执行、发出确认问句、计划状态为 halted",
+        "确认后从第二步续跑，且第一步不会被重复执行",
+        "取消后计划终止且不可恢复；已执行的步骤不回滚（在文案里说明）",
+        "被打断时整个计划取消，后续步骤不再提交",
+        "单步计划不走多步通道，退回原有单步路径（保证既有行为不变）",
+        "计划全部失败不影响管线继续处理下一条指令"
+      ],
+      "tests": "并入 tests/agent/test_planner.py 与 tests/agent/test_pipeline.py"
+    },
+    {
+      "id": "P3-A5",
+      "name": "planner 插件与配置",
+      "priority": "P0",
+      "hours": 1.0,
+      "problem": "planner 尚未进入插件清单，无法通过配置装配。",
+      "goal": "planner 由清单装配；换 Provider = 改一行配置。",
+      "deliverables": [
+        "agent/plugins/planner_plugin.py",
+        "agent/plugins/__init__.py — DEFAULT_MANIFEST 新增 planner 条目 + SVC_PLANNER",
+        "config.yaml — agent.planner 配置段（enabled / provider / max_steps / step_timeout）",
+        "agent/bootstrap.py — AgentConfig 解析 planner 配置；AgentStack.stats() 暴露 planner"
+      ],
+      "acceptance": [
+        "默认清单装配出 TemplatePlanner（无 LLM 时）",
+        "改 provider=llm → LLMPlanner；provider=hybrid → HybridPlanner",
+        "planner.enabled=false 时管线不做任何规划（退回 P2 行为）",
+        "从清单删掉 planner 条目时装配仍成功（planner 不是必需服务）"
+      ],
+      "tests": "tests/agent/test_plugins.py"
+    },
+    {
+      "id": "P3-B1",
+      "name": "embedder 两个 Provider",
+      "priority": "P0",
+      "hours": 2.0,
+      "problem": "记忆检索的质量取决于向量化，但没有实现。",
+      "goal": "本地哈希嵌入为零依赖默认；sentence-transformers 为可选 Provider，加载失败自动不可用。",
+      "deliverables": [
+        "agent/providers/memory/hashing_embedder.py — 词元 + 字符 n-gram 带符号哈希 → 定长归一化向量",
+        "agent/providers/memory/st_embedder.py — 懒加载 + 优雅降级"
+      ],
+      "acceptance": [
+        "哈希嵌入结果跨进程稳定（用 blake2b，不用内置 hash()）",
+        "输出已 L2 归一化，长度等于 dim",
+        "改一个字的句子相似度显著高于无关句",
+        "空串/空白串 → 零向量",
+        "st 嵌入器构造不加载模型；加载失败后 ready() 为 False 且 embed() 返回零向量不抛异常",
+        "st 嵌入器加载成功路径（伪造模型）输出已归一化"
+      ],
+      "tests": "tests/agent/test_memory_store.py"
+    },
+    {
+      "id": "P3-B2",
+      "name": "RecallStore：SQLite + FTS5 + 向量检索 + RRF 融合",
+      "priority": "P0",
+      "hours": 4.0,
+      "problem": "没有存储与检索。",
+      "goal": "中文可命中的词法检索 + 向量检索 + RRF 融合，两后端可切换，全程不抛异常。",
+      "deliverables": [
+        "agent/providers/memory/recall_store.py",
+        "自产中文 token 串（CJK 单字 + 相邻 bigram）绕过 FTS5 unicode61 的中文坑",
+        "vector_backend：auto / python / sqlite_vec，auto 优先 sqlite-vec，失败自动降级",
+        "RRF 融合（k=60）+ 最低相似度阈值过滤",
+        "容量淘汰 prune()、热度更新 touch()、统计 stats()",
+        "目录安全边界：拒绝写入用户四个白名单目录，命中则退化为纯内存模式",
+        "损坏 DB / 损坏 metadata / MATCH 语法转义 全部容错"
+      ],
+      "acceptance": [
+        "用中文句子存、用中文关键词查能命中（这是最关键用例）",
+        "kind 过滤在两路检索里都生效",
+        "limit 生效；query 为空或全标点返回空列表",
+        "两路都命中的条目排在只命中一路的前面（RRF 生效）",
+        "低于相似度阈值的条目不入选",
+        "vector_backend=python 与 sqlite_vec 结果一致（同一批数据）",
+        "扩展不可用时 auto 自动降级且 stats() 如实报告生效后端",
+        "超过 max_items 后 prune() 淘汰低分条目且返回淘汰数",
+        "路径落在白名单目录 → 退化为内存模式且 degraded=True",
+        "SQL 注入式查询（含引号）不导致异常",
+        "close() 幂等"
+      ],
+      "tests": "tests/agent/test_memory_store.py"
+    },
+    {
+      "id": "P3-B3",
+      "name": "HybridMemory（seam 实现）",
+      "priority": "P0",
+      "hours": 2.0,
+      "problem": "store 不是 seam 实现，管线与工具无法按接口消费。",
+      "goal": "把 store 包成 MemoryService，并加上敏感信息入口拦截与情景记忆/偏好提示。",
+      "deliverables": [
+        "agent/providers/memory/hybrid_memory.py",
+        "remember() 入口过 sensitive_reason()，命中直接拒绝且日志不打原文",
+        "record_episode() 情景记忆、hint_for() 偏好提示（带高阈值防噪声）",
+        "recall_text() 播报文案；stats() 合并 store 快照"
+      ],
+      "acceptance": [
+        "全部方法永不抛异常（store 抛异常时返回安全空值）",
+        "含密码/密钥的文本 remember() 返回 None 且未入库",
+        "episode_enabled=false 时 record_episode() 返回 None",
+        "hint_for() 无命中返回空串；有命中时前缀正确",
+        "情景记忆文本简洁可播报（无 Markdown）"
+      ],
+      "tests": "tests/agent/test_memory_store.py"
+    },
+    {
+      "id": "P3-B4",
+      "name": "记忆工具与插件接线",
+      "priority": "P0",
+      "hours": 2.0,
+      "problem": "记忆能力没有任何工具暴露给用户，也未进入装配。",
+      "goal": "3 个记忆工具可用；记忆由清单装配；管线写入情景记忆。",
+      "deliverables": [
+        "agent/tools/memory_tools.py — memory_remember / memory_recall / memory_forget",
+        "memory_forget 走 medium 风险确认通道（破坏性操作），preview() 说明影响范围",
+        "agent/plugins/memory_plugin.py",
+        "DEFAULT_MANIFEST 新增 memory 条目（依赖 kernel）+ config.yaml 的 agent.memory 段",
+        "agent/pipeline.py 在结果产出后写情景记忆（失败不影响主流程）",
+        "管线路由上下文带上记忆偏好提示"
+      ],
+      "acceptance": [
+        "三个工具注册后 registry.count() 增加 3",
+        "memory_forget 的风险等级为 medium 且会被安全守卫要求确认",
+        "memory_remember 对敏感文本给出拒绝文案而非报错",
+        "memory_recall 无结果时给出自然语言而非报错",
+        "记忆服务缺失时管线照常工作（记忆是增强不是依赖）",
+        "记忆写入失败不影响 feedback.result 的发出"
+      ],
+      "tests": "tests/agent/test_memory_tools.py"
+    },
+    {
+      "id": "P3-C1",
+      "name": "端到端验收与覆盖率收口",
+      "priority": "P0",
+      "hours": 1.5,
+      "goal": "P3 全部指标可测，覆盖率与回归达标。",
+      "deliverables": [
+        "tools/p3_acceptance_smoke.py — 真实 config 装配下的端到端场景（多步计划 + 记忆闭环）",
+        "覆盖率命令扩展到新增模块",
+        "全量回归验证"
+      ],
+      "acceptance": [
+        "端到端脚本全绿",
+        "内核+Agent+ack_cache 覆盖率 100% / 0 未覆盖",
+        "全量回归 0 失败 exit=0",
+        "P2 端到端脚本（p1_acceptance_smoke.py）不回退"
+      ],
+      "tests": "tools/p3_acceptance_smoke.py"
+    },
+    {
+      "id": "P3-D1",
+      "name": "文档回写",
+      "priority": "P0",
+      "hours": 1.0,
+      "goal": "AGENTS.md / README / 债务表 / 验收证据与实现一致。",
+      "deliverables": [
+        "AGENTS.md §15 P3 实施进度 + §16 验收关卡",
+        "债务表 D5 标记偿还",
+        "README 路线图与仓库结构更新",
+        "docs/agent/tasks-p3.json 状态更新 + evidence 归档"
+      ],
+      "acceptance": [
+        "文档引用的每个文件路径真实存在",
+        "文档中的测试数与覆盖率数字与实测一致",
+        "D5 状态与实际实现一致"
+      ],
+      "tests": "—"
+    }
+  ],
+  "gates": {
+    "P3-G0": "语法检查通过（py_compile 全部新增模块）",
+    "P3-G1": "专项测试通过（test_planner / test_memory_store / test_memory_tools）",
+    "P3-G2": "全量回归零失败（pytest tests/）",
+    "P3-G3": "覆盖率保持 100%（内核 + Agent + ack_cache）",
+    "P3-G4": "端到端不回退（p1_acceptance_smoke 18/18 + p3_acceptance_smoke 全绿）",
+    "P3-G5": "文档回写一致"
+  }
+}

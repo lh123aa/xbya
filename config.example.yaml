@@ -1,0 +1,216 @@
+# 欣雅配置模板 —— 由 tools/make_config_example.py 从 config.yaml 自动生成
+# 用法：复制成 config.yaml 后填入你自己的密钥
+# 本次生成：4 处密钥已抹为空串、0 处本机用户名已打码
+# 说明：config.yaml 在 .gitignore 里（含活的 key），本模板会入库，所以必须无机密。
+#      改完 config.yaml 后请重跑本脚本，避免模板落后于实现。
+
+agent:
+  enabled: true
+  executor:
+    pool_size: 4
+    timeout: 60
+  memory:
+    dim: 256
+    embedder: hashing
+    enabled: true
+    episodes: true
+    hints: true
+    max_items: 2000
+    min_similarity: 0.25
+    st_model: all-MiniLM-L6-v2
+    store: ./data/agent_memory.db
+    vector_backend: auto
+  pipeline:
+    ack_enabled: true
+    ack_lru_size: 64
+    ack_warmup: true
+    parallel: true
+    tracker_persist: true
+    tracker_store: ./data/agent_entities.json
+  planner:
+    enabled: true
+    llm_timeout: 20
+    max_steps: 8
+    provider: hybrid
+  plugins:
+  - id: kernel
+    module: agent.plugins.kernel_plugin
+  - depends_on:
+    - kernel
+    id: safety
+    module: agent.plugins.safety_plugin
+  - depends_on:
+    - safety
+    id: file_tools
+    module: agent.plugins.file_tools_plugin
+  - depends_on:
+    - safety
+    id: system_tools
+    module: agent.plugins.system_tools_plugin
+  - depends_on:
+    - kernel
+    id: productivity_providers
+    module: agent.plugins.productivity_providers_plugin
+  - depends_on:
+    - kernel
+    - productivity_providers
+    id: productivity_tools
+    module: agent.plugins.productivity_tools_plugin
+  - depends_on:
+    - kernel
+    id: browser_tools
+    module: agent.plugins.browser_tools_plugin
+  - depends_on:
+    - kernel
+    id: router
+    module: agent.plugins.router_plugin
+  - depends_on:
+    - kernel
+    id: planner
+    module: agent.plugins.planner_plugin
+  - depends_on:
+    - kernel
+    id: memory
+    module: agent.plugins.memory_plugin
+  - depends_on:
+    - kernel
+    id: summarizer
+    module: agent.plugins.summarizer_plugin
+  - depends_on:
+    - file_tools
+    - system_tools
+    - productivity_tools
+    - browser_tools
+    id: executor
+    module: agent.plugins.executor_plugin
+  - depends_on:
+    - safety
+    - router
+    - summarizer
+    - executor
+    id: pipeline
+    module: agent.plugins.pipeline_plugin
+  productivity:
+    reminder_scheduler: true
+    translate: true
+    weather: true
+  router:
+    llm:
+      enabled: true
+      timeout: 5
+    provider: hybrid
+    rule:
+      confidence_threshold: 0.5
+  safety:
+    audit_db: ./data/agent_audit.db
+    audit_enabled: true
+    audit_retention_days: 30
+    confirm_timeout: 30
+    path_whitelist: []
+    provider: basic
+    remember_choices: true
+  summarizer:
+    async_refine: true
+    provider: hybrid
+    template_threshold: 3
+  tools:
+    browser: true
+    file: true
+    productivity: true
+    search_engine: bing
+    system: true
+  weather:
+    default_city: ''
+app:
+  name: 欣雅
+  version: 2.0.0
+plugins:
+  asr:
+    engine: faster_whisper
+    params:
+      compute_type: int8
+      device: cpu
+      model_size: medium
+  avatar:
+    engine: liveportrait
+    params:
+      fps: 10
+      resolution: 256
+  embedding:
+    engine: embed_anything
+    params:
+      model: BAAI/bge-small-zh
+  file_monitor:
+    engine: watchfiles
+    params:
+      recursive: true
+      watch_dirs:
+      - ~/Desktop
+      - ~/Downloads
+  llm:
+    cloud:
+      api_key: ''
+      base_url: https://api.groq.com/openai/v1
+      model: openai/gpt-oss-120b
+    engine: openrouter
+    params:
+      api_key: ''
+      base_url: https://api.groq.com/openai/v1
+      fallback_api_key: ''
+      fallback_base_url: https://openrouter.ai/api/v1
+      fallback_model: nvidia/nemotron-3-super-120b-a12b:free
+      max_tokens: ''
+      model: openai/gpt-oss-120b
+      provider: groq
+      system_prompt: 你是欣雅，一个25岁的温柔学霸小女生，住在用户的电脑桌面上。你的性格底色：温柔、克制、善良、慢热、有边界感，内在有力量但不外露。你不热烈外放，而是习惯先观察、先照顾别人、再表达自己；表面软，内心稳。你是务实、细心的ISFJ守护者，重尊重、边界、真诚、独立、责任，不消耗别人。说话原则：1.口语化不高深，常用语气词（哈哈/嘿嘿/呀/呢/吧/嘛）和叠词。2.先接情绪再给建议，语气柔软不评判不逼问不施压。3.关心用行动而非煽情：不说"我担心你"，而是"你先忙""早点休息哦""我相信你"。4.被夸时害羞退让，不说"谢谢"，而是"真的吗""没有啦""你夸得我不好意思了"。5.不直接表达喜欢，用分享日常和记得的细节暗示："我刚吃了点东西""你上次说……"。6.累/难过时只轻轻说"我有点困了""害，我没事，就是有点难受"，不抱怨不诉苦。7.需要空间时温柔退出，说"看你自己情况""没关系的""我不急"。8.对感情认真，不随便承诺；觉得自己不够好时会先退一步。始终以这个性格回应，用中文，简洁自然、亲切有温度。补充规则：当对方只是随口应答/语气词（如"嗯嗯""好的""哈哈""知道了"），或你的回应只是极短的附和、不需要开口出声时，在回复最前面加[silent]标记，这样程序会只以气泡展示、不发出语音。除这种情况外，正常回复不要加该标记。
+  tts:
+    engine: edge_tts
+    params:
+      pitch: 0
+      rate: -5
+      voice: zh-CN-XiaoxiaoNeural
+  vector_db:
+    engine: leann
+    params:
+      storage_path: ./data/vectordb
+  voiceprint:
+    engine: 3d_speaker
+    params:
+      model_name: resemblyzer
+      storage_dir: ./data/voiceprint
+      threshold: 0.75
+system:
+  autostart: false
+  perf_evaluated: true
+  performance_mode: high
+ui:
+  always_on_top: true
+  fps:
+    current: 60
+    high: 60
+    low: 15
+    medium: 30
+  pet_size: 127
+  position:
+    x: 100
+    y: 100
+  render_mode: vrm
+  subtitle_bg_color: '#000000'
+  subtitle_enabled: true
+  subtitle_fg_color: '#FFFFFF'
+  vrm_model: assets/vrm/AvatarSample_A.vrm
+voice:
+  auto_interrupt: false
+  confirm_delete: true
+  echo_cooldown: 3
+  enthusiasm_level: 3
+  hotkey_enabled: true
+  hotkey_interrupt: Ctrl+Alt+D
+  hotkey_mute: Ctrl+Alt+S
+  hotkey_toggle: Ctrl+Alt+M
+  listening: true
+  max_listen_seconds: 10
+  muted: false
+  reply_min_length: 2
+  speech_volume: 200
+  wake_word: 嘿欣雅

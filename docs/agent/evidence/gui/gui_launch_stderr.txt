@@ -1,0 +1,160 @@
+# 命令: python run.py   # 启动后 WM_CLOSE 关窗
+# 归档时间: 2026-09-10 19:06:38
+# 退出码: 0
+# 原始输出如下（未编辑）
+------------------------------------------------------------------------
+19:05:52 [INFO] core.app: 小忆应用初始化中...
+19:05:52 [INFO] core.app: 1/5 初始化配置管理器...
+19:05:52 [INFO] core.config_manager: 配置文件加载成功: config.yaml
+19:05:52 [INFO] core.app: 2/5 检测硬件配置...
+19:05:56 [INFO] core.hardware_detector: 硬件检测完成: CPU=8核, 内存=15.8GB, GPU=有(NVIDIA GeForce MX250), 推荐模式=low
+19:05:56 [INFO] core.app: 3/5 初始化插件系统...
+19:05:56 [INFO] core.plugin_loader: 发现插件: faster_whisper v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: liveportrait v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: watchfiles v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: ollama v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: openai_api v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: openrouter v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: edge_tts v1.0.0
+19:05:56 [INFO] core.plugin_loader: 发现插件: 3d_speaker v2.0.0
+19:05:56 [INFO] core.app:    发现 8 个插件
+19:05:56 [INFO] core.app: 4/5 加载插件...
+19:05:56 [INFO] core.app:    加载 asr -> faster_whisper
+19:05:56 [INFO] core.plugin_loader: 插件加载成功: faster_whisper
+19:05:56 [INFO] core.app:    加载 tts -> edge_tts
+19:05:56 [INFO] plugins.tts.edge_tts.plugin: Edge TTS依赖检查通过
+19:05:56 [INFO] core.plugin_loader: 插件加载成功: edge_tts
+19:05:56 [INFO] core.app:    加载 llm -> openrouter
+19:05:56 [INFO] plugins.llm.openrouter.plugin: LLM 初始化成功，模型: openai/gpt-oss-120b，Base URL: https://api.groq.com/openai/v1
+19:05:56 [INFO] core.plugin_loader: 插件加载成功: openrouter
+19:05:56 [INFO] core.app:    加载 embedding -> embed_anything
+19:05:56 [ERROR] core.plugin_loader: 插件不存在: embed_anything
+19:05:56 [WARNING] core.app:    embedding 加载失败，使用空对象
+19:05:56 [WARNING] core.plugin_loader: 未找到接口 EmbeddingEngine 的实现，使用空对象
+19:05:56 [INFO] core.app:    加载 vector_db -> leann
+19:05:56 [ERROR] core.plugin_loader: 插件不存在: leann
+19:05:56 [WARNING] core.app:    vector_db 加载失败，使用空对象
+19:05:56 [WARNING] core.plugin_loader: 未找到接口 VectorDBEngine 的实现，使用空对象
+19:05:56 [INFO] core.app:    加载 voiceprint -> 3d_speaker
+C:\Python312\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+19:05:57 [INFO] plugins.voiceprint.three_d_speaker.plugin: 初始化说话人声纹识别: resemblyzer (resemblyzer, 阈值=0.75)
+19:05:57 [INFO] plugins.voiceprint.three_d_speaker.plugin: 加载声纹: test_user
+19:05:57 [INFO] plugins.voiceprint.three_d_speaker.plugin: 加载声纹: user
+19:05:57 [INFO] core.plugin_loader: 插件加载成功: 3d_speaker
+19:05:57 [INFO] core.app:    加载 file_monitor -> watchfiles
+19:05:57 [INFO] plugins.file_monitor.watchfiles.plugin: Watchfiles依赖检查通过
+19:05:57 [INFO] core.plugin_loader: 插件加载成功: watchfiles
+19:05:57 [INFO] core.app:    加载 avatar -> liveportrait
+19:05:57 [INFO] plugins.avatar.liveportrait.plugin: 初始化LivePortrait形象生成: 分辨率=256, FPS=10
+19:05:57 [INFO] core.plugin_loader: 插件加载成功: liveportrait
+19:05:57 [INFO] core.app: 5/5 初始化事件总线...
+19:05:57 [INFO] core.app: 7/7 装配 Agent 执行层...
+19:05:57 [INFO] core.kernel.loader: [loader] 解析出 13 个启用插件
+19:05:57 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: kernel (agent.plugins.kernel_plugin, 收编 2 项注册)
+19:05:57 [INFO] agent.providers.safety.basic_guard: [safety] BasicGuard 就绪：白名单 4 个目录，风险规则 18 条
+19:05:57 [INFO] agent.plugins.safety_plugin: [safety_plugin] 白名单: ['C:\\Users\\49046\\Desktop', 'C:\\Users\\49046\\Documents', 'C:\\Users\\49046\\Downloads', 'C:\\Users\\49046\\Pictures']
+19:05:57 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: safety (agent.plugins.safety_plugin, 收编 2 项注册)
+19:05:57 [INFO] agent.plugins.productivity_providers_plugin: [productivity_providers] translate 已接入（复用项目 LLM）
+19:05:57 [INFO] agent.plugins.productivity_providers_plugin: [productivity_providers] weather 已接入（Open-Meteo，默认城市=''）
+19:05:57 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: productivity_providers (agent.plugins.productivity_providers_plugin, 收编 2 项注册)
+19:05:57 [INFO] agent.plugins.browser_tools_plugin: [browser_tools_plugin] 注册 3 个工具（engine=bing）
+19:05:57 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: browser_tools (agent.plugins.browser_tools_plugin, 收编 1 项注册)
+19:05:57 [INFO] agent.plugins.router_plugin: [router_plugin] 就绪: HybridRouter
+19:05:57 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: router (agent.plugins.router_plugin, 收编 1 项注册)
+19:05:58 [INFO] agent.plugins.planner_plugin: [planner_plugin] 装配完成 (provider=hybrid → HybridPlanner, max_steps=8)
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: planner (agent.plugins.planner_plugin, 收编 1 项注册)
+19:05:58 [INFO] agent.providers.memory.recall_store: [memory] 向量后端就绪: sqlite_vec (dim=256)
+19:05:58 [INFO] agent.plugins.memory_plugin: [memory_plugin] 装配完成 (embedder=HashingEmbedder, backend=sqlite_vec, path=data\agent_memory.db, degraded=False)
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: memory (agent.plugins.memory_plugin, 收编 3 项注册)
+19:05:58 [INFO] agent.plugins.summarizer_plugin: [summarizer_plugin] 就绪: HybridSummarizer
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: summarizer (agent.plugins.summarizer_plugin, 收编 1 项注册)
+19:05:58 [INFO] agent.plugins.file_tools_plugin: [file_tools_plugin] 注册 6 个工具
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: file_tools (agent.plugins.file_tools_plugin, 收编 1 项注册)
+19:05:58 [INFO] agent.plugins.system_tools_plugin: [system_tools_plugin] 注册 5 个工具
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: system_tools (agent.plugins.system_tools_plugin, 收编 1 项注册)
+19:05:58 [INFO] agent.providers.productivity.reminder_scheduler: [reminder] 调度器已启动（每 1.0s 一跳）
+19:05:58 [INFO] agent.plugins.productivity_tools_plugin: [productivity_tools_plugin] 注册 4 个工具（提醒调度=开）
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: productivity_tools (agent.plugins.productivity_tools_plugin, 收编 2 项注册)
+19:05:58 [INFO] agent.providers.executor.thread_pool: [executor] 线程池执行器就绪 (workers=4, timeout=60s)
+19:05:58 [INFO] agent.plugins.executor_plugin: [executor_plugin] 线程池就绪 (pool=4, timeout=60s)
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: executor (agent.plugins.executor_plugin, 收编 2 项注册)
+19:05:58 [INFO] services.ack_cache: [ack] 确认语预热已在后台启动
+19:05:58 [INFO] agent.plugins.pipeline_plugin: [pipeline_plugin] 实体栈持久化已启用: data\agent_entities.json
+19:05:58 [INFO] agent.plugins.pipeline_plugin: [pipeline_plugin] 装配完成 (enabled=True, ack=True, refine=True, planner=True, memory=True)
+19:05:58 [INFO] core.kernel.loader: [loader] ✓ 插件已加载: pipeline (agent.plugins.pipeline_plugin, 收编 5 项注册)
+19:05:58 [INFO] core.kernel.loader: [loader] 加载完成：成功 13，失败 0
+19:05:58 [INFO] agent.bootstrap: [agent] 插件装配：成功 13，失败 0 → ['kernel', 'safety', 'productivity_providers', 'browser_tools', 'router', 'planner', 'memory', 'summarizer', 'file_tools', 'system_tools', 'productivity_tools', 'executor', 'pipeline']
+19:05:58 [INFO] agent.bootstrap: [agent] 装配完成 (enabled=True, tools=21, pool=4, ack=True, router=hybrid)
+19:05:58 [INFO] agent.pipeline: [pipeline] 并行管线已启动 (enabled=True)
+19:05:58 [INFO] core.app:    Agent 层就绪: enabled=True, tools=21, router=HybridRouter, 白名单=['C:\\Users\\49046\\Desktop', 'C:\\Users\\49046\\Documents', 'C:\\Users\\49046\\Downloads', 'C:\\Users\\49046\\Pictures']
+19:05:58 [INFO] core.app: ========================================
+19:05:58 [INFO] core.app: 小忆应用初始化完成！
+19:05:58 [INFO] core.app: ========================================
+19:05:58 [INFO] core.app: 小忆应用启动...
+19:05:58 [INFO] ui.pet_window: 主循环帧率已设置: 60fps
+19:05:58 [INFO] ui.pet_window: PetWindow初始化完成
+19:05:58 [INFO] ui.pet_window: [agent] PetWindow 已订阅 Agent 事件
+19:05:58 [INFO] animation.clip: 加载动画: resources/sprites\cat\idle, 36帧
+19:05:58 [INFO] animation.controller: 加载宠物: cat, 10个动画
+19:05:59 [INFO] ui.pet_window: [vrm] 已启用 VRM 渲染: assets/vrm/AvatarSample_A.vrm (viewer=E:\程序\桌面宠物\xiaoyi-vrm-worktree\assets\vrm\viewer.html)
+19:05:59 [INFO] core.app: VRM渲染: 已启用
+19:05:59 [INFO] services.microphone_service: PyAudio可用
+19:05:59 [INFO] services.microphone_service: 麦克风服务初始化
+19:05:59 [INFO] ui.pet_window: 常驻语音监听已启动
+19:05:59 [INFO] services.hotkey_manager: [热键] 解析combo='Ctrl+Alt+M' → mods=3, vk=0x004D ('M')
+19:05:59 [INFO] services.hotkey_manager: [热键] RegisterHotKey: id=0x8001, mods=3, vk=0x004D, combo='Ctrl+Alt+M'
+19:05:59 [INFO] services.hotkey_manager: 全局热键已注册: 'Ctrl+Alt+M' → id=0x8001
+19:05:59 [INFO] services.hotkey_manager: [热键] 解析combo='Ctrl+Alt+S' → mods=3, vk=0x0053 ('S')
+19:05:59 [INFO] services.hotkey_manager: [热键] RegisterHotKey(extra): id=0x8010, mods=3, vk=0x0053, combo='Ctrl+Alt+S'
+19:05:59 [INFO] services.hotkey_manager: 额外全局热键已注册: 'Ctrl+Alt+S' → id=0x8010
+19:05:59 [INFO] services.hotkey_manager: [热键] 解析combo='Ctrl+Alt+D' → mods=3, vk=0x0044 ('D')
+19:05:59 [INFO] services.hotkey_manager: [热键] RegisterHotKey(extra): id=0x8011, mods=3, vk=0x0044, combo='Ctrl+Alt+D'
+19:05:59 [INFO] services.hotkey_manager: 额外全局热键已注册: 'Ctrl+Alt+D' → id=0x8011
+19:05:59 [INFO] core.app: [热键] 初始化完成: 已注册=True, 主回调=有, 额外热键数=2
+19:05:59 [INFO] core.app: 临时文件清理器已启动（周期 10 分钟，后台自动）
+19:05:59 [INFO] services.microphone_service: [mic] 选中麦克风设备索引 1
+19:06:00 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 13968 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:00 [INFO] services.microphone_service: 使用指定麦克风设备 idx=1
+19:06:00 [INFO] services.microphone_service: 常驻监听启动，等待说话... (基础阈值=200.0, 采样率=16000)
+19:06:01 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 13536 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:01 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 10800 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:02 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 14976 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+js: [petX-DEBUG] fitCamera box=(1.37,1.61,0.44) h=1.61 topY=1.56 frameH=0.81 targetY=1.35 dist=1.54 aspectW=228 aspectH=184 fov=30
+js: [petX-DEBUG] model ready OK, name=unknown, expressions=13
+19:06:03 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 9648 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:04 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 14688 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:05 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 10656 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:06 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 14688 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:07 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 15408 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:08 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 12960 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:08 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 8784 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:09 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 12960 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:10 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 10224 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:11 [INFO] plugins.tts.edge_tts.plugin: 语音合成完成，音频大小: 10944 字节，音色: zh-CN-XiaoxiaoNeural，语速: -5%，音调: 0Hz
+19:06:11 [INFO] services.ack_cache: [ack] 确认语预热结束：成功 14 条，失败 0 条
+19:06:12 [INFO] animation.clip: 加载动画: resources/sprites\cat\stare, 36帧
+19:06:19 [INFO] services.hotkey_manager: [热键] 注销主热键 id=0x8001
+19:06:19 [INFO] services.hotkey_manager: [热键] 注销额外热键 'Ctrl+Alt+S' id=0x8010
+19:06:19 [INFO] services.hotkey_manager: [热键] 注销额外热键 'Ctrl+Alt+D' id=0x8011
+19:06:19 [INFO] services.hotkey_manager: 额外全局热键已注销
+19:06:19 [INFO] core.app: 小忆应用关闭中...
+19:06:19 [INFO] agent.pipeline: [pipeline] 并行管线已停止
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 pipeline（撤销 5 项注册）
+19:06:19 [INFO] agent.pipeline: [pipeline] 并行管线已停止
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 executor（撤销 2 项注册）
+19:06:19 [INFO] agent.providers.executor.thread_pool: [executor] 已关闭
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 productivity_tools（撤销 2 项注册）
+19:06:19 [INFO] agent.providers.productivity.reminder_scheduler: [reminder] 调度器已停止（累计播报 0 条）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 system_tools（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 file_tools（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 summarizer（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 memory（撤销 3 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 planner（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 router（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 browser_tools（撤销 1 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 productivity_providers（撤销 2 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 safety（撤销 2 项注册）
+19:06:19 [INFO] core.kernel.loader: [loader] 卸载插件 kernel（撤销 2 项注册）
+19:06:19 [INFO] agent.bootstrap: [agent] Agent 栈已释放
+19:06:19 [INFO] core.app: 小忆应用已关闭

@@ -1,0 +1,96 @@
+# 关卡: G5 P3 端到端验收
+# 命令: C:\Python312\python.exe tools/p3_acceptance_smoke.py
+# 用时: 48.7s
+# 退出码: 0
+# 外部依赖: 否
+------------------------------------------------------------------------
+
+[场景 1] 真实配置装配
+  tools=21 router=HybridRouter summarizer=HybridSummarizer
+  planner=HybridPlanner memory=HybridMemory
+  plugins=['kernel', 'safety', 'productivity_providers', 'browser_tools', 'router', 'planner', 'memory', 'summarizer', 'file_tools', 'system_tools', 'productivity_tools', 'executor', 'pipeline']
+[PASS] 工具集装配（含 3 个记忆工具）  → 21 个
+[PASS] 规划器已装配  → HybridPlanner
+[PASS] 长期记忆已装配  → HybridMemory
+[PASS] 插件清单齐备  → 13 条
+[PASS] 生产力能力 Provider 已装配（F7）
+  memory: backend=sqlite_vec degraded=False dim=256
+[PASS] 记忆存储未降级
+
+[场景 2] 单步指令不受影响
+[PASS] 单步指令有结果  → 找到 2 个文件（合同_2025.pdf、旧合同.pdf）
+[PASS] 未产出多步计划
+
+[场景 3] 多步计划：搜 → 移（确认后完成）
+[PASS] 计划已启动  → 2 步
+  链路：file_search → file_move  来源：template
+[PASS] 计划链路正确  → file_search → file_move
+[PASS] 第 2 步请求确认
+  确认问句：这是第 2 步，一共 2 步。前面已经找到 2 个文件。把它挪到 Desktop。要继续吗？
+[PASS] 确认问句含步骤上下文
+[PASS] 计划处于挂起状态
+  结果：success 2/2 2 步都做完啦：找到 2 个文件，「合同_2025.pdf」本来就在Desktop里呀
+[PASS] 计划完成  → success
+[PASS] 两步都执行了  → done=2
+[PASS] 占位符已解析（步骤间数据传递）
+
+[场景 4] 多步计划：确认后取消
+[PASS] 计划被取消  → cancelled
+[PASS] 如实说明已做部分不回滚
+
+[场景 5] 多步计划：某步被安全守卫拒绝 → 中止
+  结果：failed 找到 2 个文件。但第 2 步没做成：这个位置我不能动哦，只能操作：C:\Users\49046\AppData\Loc
+[PASS] 计划中止  → failed
+[PASS] 拒绝理由对用户可读
+
+[场景 6] 计划含未注册工具 → 退回闲聊
+[PASS] 未启动含非法工具的计划
+[PASS] 退回闲聊
+
+[场景 7] 中文写入 → 中文检索命中
+  检索「浏览器」→ ['我喜欢用 Chrome 浏览器']
+[PASS] 中文关键词命中  → 1 条
+[PASS] 换词形仍可召回  → 1 条
+
+[场景 8] 敏感信息拒绝入库
+[PASS] 拒绝入库：我的密码是 hunter…
+[PASS] 拒绝入库：api_key=sk-a…
+[PASS] 拒绝入库：身份证 11010119…
+[PASS] 敏感内容未增加记忆条数
+
+[场景 9] 情景记忆：执行一次 → 可召回
+  情景记忆 → ['上次让你「找文件」，找到 2 个文件', '上次让你「找文件」，找到 2 个文件']
+[PASS] 工具执行被记为情景  → 3 条
+[PASS] 情景正文含可播报的结果
+
+[场景 10] 记忆工具经注册表可用
+[PASS] 工具已注册：memory_remember
+[PASS] 工具已注册：memory_recall
+[PASS] 工具已注册：memory_forget
+[PASS] memory_remember 执行成功  → 记住啦：常用目录是下载
+[PASS] memory_recall 有结果  → 2 条
+[PASS] 工具层拒绝敏感内容并说明原因  → 这个我不方便记哦，里面有密码这类信息
+[PASS] 敏感内容未入库
+
+[场景 11] 偏好提示注入路由上下文
+[PASS] 路由上下文含 memory_hint  → '你之前说过：我喜欢用 Chrome 浏览器、常用目录是下载'
+
+[场景 12] 存储位置安全
+[PASS] 记忆库已落盘  → 4096 bytes
+[PASS] 记忆库在临时沙箱内（不在用户四目录）
+[PASS] 记忆库未写入白名单目录
+
+[汇总统计]
+  pipeline: plans=3 plan_steps=4 plan_halted=2 plan_failed=1 plan_cancelled=1
+  memory: count=7 backend=sqlite_vec rejected=3
+[PASS] 计划计数正确  → plans=3
+[PASS] 步骤计数正确  → steps=4
+[PASS] 记忆条数正确  → count=7
+
+======================================================================
+P3 验收结果：44/44 通过
+======================================================================
+[safety] 拒绝白名单外路径: C:\Windows\System32
+[memory] 拒绝记住含「密码」的内容（原文不入日志）
+[memory] 拒绝记住含「密钥」的内容（原文不入日志）
+[memory] 拒绝记住含「身份证号」的内容（原文不入日志）

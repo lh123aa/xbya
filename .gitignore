@@ -1,0 +1,31 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.superpowers/
+build/
+dist/
+*.vrm
+*.bak
+
+config.yaml
+config/api_keys.yaml
+
+# Agent 层运行时状态（实体栈 / 审计库 / 记忆库 / 提醒库 —— 全是运行时产物，不入库）
+# P4-A1 勘误：原先只列了 agent_entities.json 与 agent_audit.db 两个文件，
+# 而 P3 新增的 data/agent_memory.db（1.6MB）与 P4-A2 将要写的 data/agent_reminders.json
+# 都不在列——漏一个就把运行时数据库提交进历史。改为整目录忽略，避免再次漏。
+data/
+
+# 下载的第三方模型（models/ 里 3 个 .ckpt 共 84.7MB，另有 HF 式 .metadata/.TAG）
+# 与 .gitignore 里已有的 *.vrm 同一取向：大体积第三方权重不进版本库
+models/
+
+# 日志
+logs/
+*.log
+
+# 临时音频（回环/ASR 落盘产物；正式证据在 docs/agent/evidence/voice/）
+*.tmp.wav

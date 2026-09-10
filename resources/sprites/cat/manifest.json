@@ -1,0 +1,15 @@
+{
+  "size": [128, 128],
+  "animations": {
+    "idle": {"fps": 12, "loop": true},
+    "happy": {"fps": 12, "loop": true},
+    "sleep": {"fps": 12, "loop": true},
+    "talk": {"fps": 12, "loop": false},
+    "sad": {"fps": 12, "loop": true},
+    "listen": {"fps": 12, "loop": true},
+    "think": {"fps": 12, "loop": true},
+    "dance": {"fps": 12, "loop": true},
+    "wander": {"fps": 12, "loop": true},
+    "stare": {"fps": 12, "loop": true}
+  }
+}

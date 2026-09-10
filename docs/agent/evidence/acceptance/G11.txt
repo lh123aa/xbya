@@ -1,0 +1,45 @@
+# 关卡: G11 真实 GUI 启动与优雅退出
+# 命令: C:\Python312\python.exe tools/verify_gui_launch.py
+# 用时: 12.8s
+# 退出码: 0
+# 外部依赖: 是
+------------------------------------------------------------------------
+========================================================================
+真实 GUI 启动验证
+时间: 2026-09-10 21:12:33
+========================================================================
+
+[GUI-1] 启动应用
+  PID=23012，日志 → docs\agent\evidence\gui\launch_run.log
+[PASS] 出现标题含「欣雅」的可见窗口  → 10.0s 内
+  hwnd=725088 title='欣雅' 位置=(1559,120) 尺寸=228x228
+[PASS] 窗口尺寸合理  → 228x228
+
+[GUI-2] 截图判断是否真的渲染出来
+  第1次: 颜色数=350 主色占比=33.3%
+[PASS] 窗口区域不是空白（宠物真的画出来了）  → 颜色数=350 主色占比=33.3%
+
+[GUI-3] Agent 层在 GUI 内是否真的活着
+[PASS] 日志出现「Agent 层就绪」（没降级为纯对话）  → Agent 层就绪: enabled=True, tools=21, router=HybridRouter
+[PASS] Agent 层 enabled=True  → True
+[PASS] 工具数 >= 21  → 21
+[PASS] PetWindow 订阅了 Agent 事件
+[PASS] translate 已在 GUI 内接入真实 LLM
+[PASS] weather 已在 GUI 内接入真实服务
+[PASS] 提醒调度器已启动
+
+[GUI-4] 优雅退出
+[PASS] 窗口已关闭  → 0.3s
+[PASS] 进程退出码为 0（优雅退出）  → code=0
+[PASS] Agent 栈已释放
+[PASS] 提醒调度器已停止（不留悬挂线程）
+[PASS] 应用关闭流程走完
+[PASS] 退出路径无未捕获异常
+  （截图已删除：pet_window.png；加 --keep-shot 可保留）
+
+========================================================================
+GUI 结果：16/16 通过，0 失败，0 跳过
+日志归档: docs\agent\evidence\gui\launch_run.log
+========================================================================
+E:\程序\桌面宠物\xiaoyi-vrm-worktree\tools\verify_gui_launch.py:110: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  pixels = list(small.getdata())

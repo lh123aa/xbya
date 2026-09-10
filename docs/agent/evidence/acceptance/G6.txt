@@ -1,0 +1,59 @@
+# 关卡: G6 指标测量
+# 命令: C:\Python312\python.exe tools/measure_acceptance_metrics.py
+# 用时: 2.6s
+# 退出码: 0
+# 外部依赖: 是
+------------------------------------------------------------------------
+==========================================================================
+欣雅 Agent 层 · P1 系统性验收 — 指标量化
+时间: 2026-09-10 21:09:51
+Python: 3.12.8  平台: nt
+==========================================================================
+
+[PASS] M1 规则路由准确率: 100.0% (73/73)  (目标 >90%)
+        action 错 0 条，参数错 0 条
+[PASS] M2 规则路由延迟: P50 0.036ms / P95 0.050ms / P99 0.077ms (n=365)  (目标 P95 <10ms)
+[PASS] M3 感知延迟（首次反馈→确认语）: P50 1.8ms / max 2.0ms (n=4)  (目标 <1.5s)
+        ack 与 submit 并行发射，确认语走预热缓存
+[PASS] M4 总延迟（结果播报）: P50 2.8ms / max 10.5ms (n=4)  (目标 <3s)
+[PASS] M5 误操作率（非法路径拒绝率）: 拒绝 8/8；白名单内放行=是  (目标 拦截率 100% / 白名单内不误拒)
+        漏放: 无；异常类型异常: 无
+[PASS] M6 删除可恢复率: 永久删除调用=无；send2trash=有；实调用次数=1  (目标 100%（无永久删除分支）)
+        源码审查 + 运行时验证；实际入回收站行为由 p1_acceptance_smoke.py 场景 4 端到端确认
+[PASS] M7 工具执行成功率（真实执行子集）: 100% (10/10)  (目标 >95%)
+        失败: 无；另 mock 验证 3/3 ；未真实执行: open_app（会弹窗）、screenshot（会写图片）、web_*（会联网）
+[PASS] M10 插件可卸载: load=True 载后可用=True unload=True 卸后可用=False  (目标 卸载后服务不可用)
+        注：loader 已实现且行为正确，但尚未被 build_agent_stack 使用（配置驱动装配未接入）
+
+--- 附加抽检 ---
+  指代消解: 第二个→['b.png'] 最后一个→['c.png'] 那些→['a.png', 'b.png', 'c.png']
+  判定: [PASS]
+  降级链: LLM 抛异常 → action=chat, llm 调用=1
+  判定: [PASS]
+  模板摘要: 找到「报告.docx」，1K
+  判定: [PASS]
+
+==========================================================================
+汇总（M8 覆盖率 / M9 回归 由 pytest 提供，见 g0_coverage.txt / g3_regression.txt）
+==========================================================================
+  PASS  M1   规则路由准确率                    100.0% (73/73)
+  PASS  M2   规则路由延迟                     P50 0.036ms / P95 0.050ms / P99 0.077ms (n=365)
+  PASS  M3   感知延迟（首次反馈→确认语）             P50 1.8ms / max 2.0ms (n=4)
+  PASS  M4   总延迟（结果播报）                  P50 2.8ms / max 10.5ms (n=4)
+  PASS  M5   误操作率（非法路径拒绝率）              拒绝 8/8；白名单内放行=是
+  PASS  M6   删除可恢复率                     永久删除调用=无；send2trash=有；实调用次数=1
+  PASS  M7   工具执行成功率（真实执行子集）            100% (10/10)
+  PASS  M10  插件可卸载                      load=True 载后可用=True unload=True 卸后可用=False
+
+  统计: {'PASS': 8}
+
+证据已写入: docs/agent/evidence/metrics.txt / metrics.json
+[tools] 未注册的工具: system_info
+[safety] 拒绝白名单外路径: C:\Windows\System32\drivers\etc\hosts
+[safety] 拒绝白名单外路径: C:\Program Files\secret.txt
+[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\xiaoyi_metrics_zcg8uzuv\escaped.txt
+[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\Windows\x.txt
+[safety] 拒绝 UNC 路径: \\server\share\file.txt
+[safety] 拒绝白名单外路径: C:\Windows
+[safety] 拒绝白名单外路径: D:\backup\x.txt
+[hybrid] LLM 路由失败: llm 超时

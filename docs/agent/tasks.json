@@ -1,0 +1,598 @@
+{
+  "project": "欣雅 Agent 层",
+  "version": "1.0",
+  "generated_at": "2025-01",
+  "methodology": "驾驭工程 v2.0 / 压缩模式",
+  "scope": "P0",
+  "execution_status": {
+    "note": "本文件是 P0 阶段的规划产物。逐任务的 status 字段从未被维护（原值全为 null），此处不再伪造逐项状态，改为记录阶段级实况；权威进度以 AGENTS.md §11~§14 为准。",
+    "updated_at": "2026-09-10",
+    "phase_status": {
+      "A": "done",
+      "B": "done",
+      "C": "done",
+      "D": "done",
+      "E": "done",
+      "F": "done",
+      "G": "done",
+      "H": "done"
+    },
+    "phase_evidence": {
+      "A": "kernel 覆盖率 100%（465 语句 / 0 未覆盖），133 passed",
+      "B": "test_pipeline.py 49 passed；ack∥submit 实测间隔 <50ms",
+      "C": "73 条指令集准确率 100%，P95 0.80ms",
+      "D": "test_safety.py + test_edge_cases.py 155 passed / 0 failed；无永久删除分支",
+      "E": "test_summarizer.py 92 passed；P2-2 后再增异步补播 26 项",
+      "F": "test_file_tools.py 84 passed",
+      "G": "test_tracker.py 59 passed；P2-3 后再增持久化 47 项",
+      "H": "端到端 18/18，全量回归 1617 passed / 0 failed"
+    },
+    "beyond_p0": {
+      "P1": "done（见 AGENTS.md §12；G0~G2 通过，G3 有条件通过）",
+      "P2": "done（见 AGENTS.md §13；D1/D2/D4 已偿还）",
+      "F2": "done（见 AGENTS.md §14；loader 已接入 build_agent_stack）",
+      "P3": "未开始（planner seam / memory seam / 长期记忆）"
+    },
+    "known_open": [
+      "D7 测试套件间歇性崩溃：疑似已修复（修后 22 轮 0 次），待继续累计轮次后关闭",
+      "P1 验收报告中的 4 项‘仅 mock 验证’与 5 项人工语音验证仍未执行"
+    ]
+  },
+  "p0_definition": "插件内核 + 并行管线 + 路由/安全 + 文件工具",
+  "total_tasks": 123,
+  "estimated_hours": 92,
+  "estimated_days_at_3h": 31,
+  "execution_protocol": {
+    "task_states": ["pending", "in_progress", "verifying", "done", "blocked"],
+    "round_trip_checklist": [
+      "代码文件已创建/修改",
+      "语法检查通过（python -m py_compile）",
+      "单元测试已编写",
+      "单元测试通过（pytest -v）",
+      "全量回归通过（pytest tests/）",
+      "手动验证关键流程（如适用）",
+      "文档已更新（如接口变更）"
+    ],
+    "block_conditions": [
+      "需要超出已确认决策范围的架构变更",
+      "需要引入未登记的新依赖",
+      "现有测试出现非预期失败",
+      "安全边界需要放宽",
+      "单任务耗时超过预估 3 倍"
+    ]
+  },
+  "phases": [
+    {
+      "id": "A",
+      "name": "插件内核",
+      "goal": "构建可注册、可替换、可卸载的插件内核",
+      "tasks": [
+        {
+          "id": "A-01",
+          "title": "定义 Event 数据结构",
+          "file": "core/kernel/events.py",
+          "depends_on": [],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "Event dataclass（type/data/timestamp/source）+ EventType 常量表",
+          "acceptance": {
+            "criteria": ["Event 可实例化", "默认值正确（timestamp 自动填充）", "不可变（frozen 或 dataclass(slots)）"],
+            "automated": ["pytest tests/kernel/test_events.py::test_event_dataclass -v"]
+          }
+        },
+        {
+          "id": "A-02",
+          "title": "实现事件订阅（on/off）",
+          "file": "core/kernel/events.py",
+          "depends_on": ["A-01"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "EventBus.on(type, handler) → disposer，EventBus.off(type, handler) → bool",
+          "acceptance": {
+            "criteria": ["同一事件可注册多个 handler", "off 能精确移除指定 handler", "重复移除返回 False 不抛异常"],
+            "automated": ["pytest tests/kernel/test_events.py::test_on_off -v"]
+          }
+        },
+        {
+          "id": "A-03",
+          "title": "实现事件发射（emit）与异常隔离",
+          "file": "core/kernel/events.py",
+          "depends_on": ["A-02"],
+          "minutes": 45,
+          "risk": "medium",
+          "deliverable": "EventBus.emit(type, **data) — 单 handler 异常不影响其他 handler",
+          "acceptance": {
+            "criteria": ["emit 调用所有注册的 handler", "单个 handler 抛异常被捕获并记录日志", "异常不中断后续 handler"],
+            "automated": ["pytest tests/kernel/test_events.py::test_emit_isolation -v"]
+          }
+        },
+        {
+          "id": "A-04",
+          "title": "实现一次性订阅与通配订阅",
+          "file": "core/kernel/events.py",
+          "depends_on": ["A-03"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "EventBus.once(type, handler) 与 EventBus.on_any(handler)",
+          "acceptance": {
+            "criteria": ["once 触发后自动移除", "on_any 接收所有事件类型"],
+            "automated": ["pytest tests/kernel/test_events.py::test_once_and_any -v"]
+          }
+        },
+        {
+          "id": "A-05",
+          "title": "内核事件模块回归验证",
+          "file": "core/kernel/events.py",
+          "depends_on": ["A-04"],
+          "minutes": 20,
+          "risk": "low",
+          "deliverable": "events.py 完成 + 全测试通过",
+          "acceptance": {
+            "criteria": ["tests/kernel/test_events.py 全部通过", "无现有测试回归"],
+            "automated": ["pytest tests/kernel/test_events.py -v", "pytest tests/ -q"]
+          }
+        },
+        {
+          "id": "A-06",
+          "title": "定义 Service 基类与异常",
+          "file": "core/kernel/service.py",
+          "depends_on": [],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "Service ABC + ServiceNotFound + Disposable 协议",
+          "acceptance": {
+            "criteria": ["Service 不可直接实例化（abstract）", "ServiceNotFound 携带服务名"],
+            "automated": ["pytest tests/kernel/test_service.py -v"]
+          }
+        },
+        {
+          "id": "A-07",
+          "title": "定义 Context 骨架",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-06"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "Context.__init__（_services/_disposers/_events/_parent）",
+          "acceptance": {
+            "criteria": ["Context 可实例化", "内部结构初始化正确"],
+            "automated": ["pytest tests/kernel/test_context.py::test_init -v"]
+          }
+        },
+        {
+          "id": "A-08",
+          "title": "实现能力注册（provide）",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-07"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "Context.provide(name, impl) → disposer",
+          "acceptance": {
+            "criteria": ["注册后可通过 use 获取", "返回的 disposer 可注销", "重复注册同名服务抛异常或覆盖（需明确）"],
+            "automated": ["pytest tests/kernel/test_context.py::test_provide -v"]
+          }
+        },
+        {
+          "id": "A-09",
+          "title": "实现能力获取（use）与父级查找",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-08"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "Context.use(name) — 本地优先，未命中查找父 context",
+          "acceptance": {
+            "criteria": ["本地服务优先返回", "本地缺失时向上查找", "全部缺失抛 ServiceNotFound"],
+            "automated": ["pytest tests/kernel/test_context.py::test_use -v"]
+          }
+        },
+        {
+          "id": "A-10",
+          "title": "实现作用域隔离（fork）",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-09"],
+          "minutes": 45,
+          "risk": "medium",
+          "deliverable": "Context.fork() → 子 context（注册项隔离，能力可继承）",
+          "acceptance": {
+            "criteria": ["子 context 注册不影响父", "子 context 可读父的服务", "子 context dispose 不影响父"],
+            "automated": ["pytest tests/kernel/test_context.py::test_fork -v"]
+          }
+        },
+        {
+          "id": "A-11",
+          "title": "实现逆序清理（dispose）",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-10"],
+          "minutes": 45,
+          "risk": "medium",
+          "deliverable": "Context.dispose() — 逆序执行所有 disposer，单个失败不中断",
+          "acceptance": {
+            "criteria": ["清理顺序为注册逆序", "单个 disposer 抛异常被捕获", "清理后服务不可用"],
+            "automated": ["pytest tests/kernel/test_context.py::test_dispose -v"]
+          }
+        },
+        {
+          "id": "A-12",
+          "title": "Context 挂载事件总线",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-11", "A-04"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "Context.on/emit 代理到内部 EventBus，dispose 时自动清理订阅",
+          "acceptance": {
+            "criteria": ["ctx.on 返回可注销的 disposer", "ctx.dispose 清理所有订阅"],
+            "automated": ["pytest tests/kernel/test_context.py::test_events_integration -v"]
+          }
+        },
+        {
+          "id": "A-13",
+          "title": "Context 模块回归验证",
+          "file": "core/kernel/context.py",
+          "depends_on": ["A-12"],
+          "minutes": 20,
+          "risk": "low",
+          "deliverable": "context.py 完成 + 覆盖率 >90%",
+          "acceptance": {
+            "criteria": ["test_context.py 全通过", "覆盖率 >90%"],
+            "automated": ["pytest tests/kernel/test_context.py -v --cov=core/kernel/context"]
+          }
+        },
+        {
+          "id": "A-14",
+          "title": "定义通用注册表 Registry",
+          "file": "core/kernel/registry.py",
+          "depends_on": ["A-06"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "Registry[T] 泛型注册表（register/unregister/get/list/has）",
+          "acceptance": {
+            "criteria": ["泛型类型标注正确", "register 返回 disposer", "重复注册同名项的行为明确"],
+            "automated": ["pytest tests/kernel/test_registry.py -v"]
+          }
+        },
+        {
+          "id": "A-15",
+          "title": "实现注册表过滤与查询",
+          "file": "core/kernel/registry.py",
+          "depends_on": ["A-14"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "Registry.filter(predicate) / Registry.names() / Registry.items()",
+          "acceptance": {
+            "criteria": ["filter 支持 lambda 谓词", "names/items 返回快照（不受并发修改影响）"],
+            "automated": ["pytest tests/kernel/test_registry.py::test_filter -v"]
+          }
+        },
+        {
+          "id": "A-16",
+          "title": "定义 PluginSpec 数据结构",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-14"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "PluginSpec dataclass（id/module/entry/config/enabled/depends_on）",
+          "acceptance": {
+            "criteria": ["可从 dict 构造", "缺省值合理（enabled=True）"],
+            "automated": ["pytest tests/kernel/test_loader.py::test_spec -v"]
+          }
+        },
+        {
+          "id": "A-17",
+          "title": "实现配置解析（YAML → PluginSpec 列表）",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-16"],
+          "minutes": 45,
+          "risk": "low",
+          "deliverable": "PluginLoader.parse_config(config_dict) → list[PluginSpec]",
+          "acceptance": {
+            "criteria": ["正确解析 config.yaml 的 agent.plugins 段", "enabled=false 的插件被过滤", "格式错误时给出明确报错"],
+            "automated": ["pytest tests/kernel/test_loader.py::test_parse_config -v"]
+          }
+        },
+        {
+          "id": "A-18",
+          "title": "实现依赖拓扑排序",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-17"],
+          "minutes": 60,
+          "risk": "medium",
+          "deliverable": "PluginLoader.resolve_order(specs) → 有序列表（Kahn 算法）",
+          "acceptance": {
+            "criteria": ["依赖项先于依赖者", "循环依赖检测并报错", "无依赖时保持原序"],
+            "automated": ["pytest tests/kernel/test_loader.py::test_topology -v"]
+          }
+        },
+        {
+          "id": "A-19",
+          "title": "实现插件动态导入与加载",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-18"],
+          "minutes": 60,
+          "risk": "medium",
+          "deliverable": "PluginLoader.load(spec, ctx) → 调用入口函数，捕获并报告失败",
+          "acceptance": {
+            "criteria": ["动态导入模块并调用入口", "单个插件失败不影响其他插件", "失败信息包含插件 id 和原因"],
+            "automated": ["pytest tests/kernel/test_loader.py::test_load -v"]
+          }
+        },
+        {
+          "id": "A-20",
+          "title": "实现插件卸载",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-19"],
+          "minutes": 45,
+          "risk": "medium",
+          "deliverable": "PluginLoader.unload(plugin_id, ctx) — 触发插件的 disposer",
+          "acceptance": {
+            "criteria": ["卸载后插件的服务不可用", "卸载一个插件不影响其他插件", "重复卸载不抛异常"],
+            "automated": ["pytest tests/kernel/test_loader.py::test_unload -v"]
+          }
+        },
+        {
+          "id": "A-21",
+          "title": "内核加载器回归验证",
+          "file": "core/kernel/loader.py",
+          "depends_on": ["A-20"],
+          "minutes": 20,
+          "risk": "low",
+          "deliverable": "loader.py 完成 + 覆盖率 >90%",
+          "acceptance": {
+            "criteria": ["test_loader.py 全通过", "内核整体覆盖率 >90%"],
+            "automated": ["pytest tests/kernel/ -v --cov=core/kernel"]
+          }
+        },
+        {
+          "id": "A-22",
+          "title": "内核对外接口导出",
+          "file": "core/kernel/__init__.py",
+          "depends_on": ["A-21"],
+          "minutes": 20,
+          "risk": "low",
+          "deliverable": "__init__.py 导出 Context/Service/Registry/EventBus/PluginLoader/PluginSpec",
+          "acceptance": {
+            "criteria": ["from core.kernel import Context 可用", "无循环导入"],
+            "automated": ["pytest tests/kernel/test_imports.py -v"]
+          }
+        },
+        {
+          "id": "A-23",
+          "title": "编写内核使用示例",
+          "file": "docs/agent/kernel_usage.md",
+          "depends_on": ["A-22"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "一个完整的插件定义 + 注册 + 卸载示例",
+          "acceptance": {
+            "criteria": ["示例代码可直接运行", "覆盖 provide/use/fork/dispose"],
+            "manual": ["复制示例到临时文件运行，观察输出"]
+          }
+        },
+        {
+          "id": "A-24",
+          "title": "Phase A 整体验收",
+          "file": "-",
+          "depends_on": ["A-23"],
+          "minutes": 30,
+          "risk": "low",
+          "deliverable": "Phase A 验收报告",
+          "acceptance": {
+            "criteria": ["内核覆盖率 >90%", "现有测试零回归", "示例可运行"],
+            "automated": ["pytest tests/ -q", "pytest tests/kernel/ --cov=core/kernel"]
+          }
+        }
+      ]
+    }
+  ],
+  "remaining_phases_summary": {
+    "note": "⚠️ 本节是 P0 规划期的**历史快照**：当时只展开了 Phase A 的 24 项明细，B~H 留作摘要待细化。Phase B~H 后续均已实现（见 execution_status.phase_status 全为 done，与 AGENTS.md §11 + docs/agent/phases.md）。之所以保留原摘要而不删：它是「最小任务粒度」这一方法论要求的原始产物，删掉就看不出当初的分解粒度了。**不要把本节当作待办清单。**",
+    "historical": true,
+    "phases": [
+      {
+        "id": "B",
+        "name": "消息与并行管线",
+        "task_count": 16,
+        "hours": 12,
+        "key_tasks": [
+          "B-01 定义 AgentCommand dataclass",
+          "B-02 定义 AgentResult dataclass",
+          "B-03 定义状态枚举与事件名常量",
+          "B-04 test_message.py",
+          "B-05 Pipeline 骨架",
+          "B-06 speech.recognized 处理",
+          "B-07 intent.resolved → 并行发射 ack + execute",
+          "B-08 task.completed → feedback.result",
+          "B-09 超时与降级",
+          "B-10 打断处理",
+          "B-11 test_pipeline.py",
+          "B-12 ACK_PHRASES 短语库",
+          "B-13 缓存预热机制",
+          "B-14 缓存查询接口",
+          "B-15 test_ack_cache.py",
+          "B-16 Phase B 验收"
+        ]
+      },
+      {
+        "id": "C",
+        "name": "意图路由",
+        "task_count": 15,
+        "hours": 11,
+        "key_tasks": [
+          "C-01 RouterService ABC",
+          "C-02 IntentDef 数据结构",
+          "C-03 12 个意图关键词表",
+          "C-04 关键词匹配实现",
+          "C-05 参数提取（正则）",
+          "C-06 置信度计算",
+          "C-07 50 条测试指令集",
+          "C-08 test_rule_router.py",
+          "C-09 规则路由准确率验证 >90%",
+          "C-10 LLM function calling schema",
+          "C-11 LLM 调用封装 + 超时",
+          "C-12 test_llm_router.py（mock）",
+          "C-13 混合路由置信度分流",
+          "C-14 失败降级链",
+          "C-15 Phase C 验收"
+        ]
+      },
+      {
+        "id": "D",
+        "name": "安全守卫",
+        "task_count": 12,
+        "hours": 10,
+        "key_tasks": [
+          "D-01 SafetyService ABC + SafetyVerdict",
+          "D-02 三级风险规则表",
+          "D-03 路径白名单校验",
+          "D-04 路径规范化（防 ../ 穿越 + 符号链接）",
+          "D-05 风险评估实现",
+          "D-06 确认状态管理",
+          "D-07 审计日志（SQLite）",
+          "D-08 用户选择记忆",
+          "D-09 test_safety.py",
+          "D-10 安全边界测试（穿越/白名单外/软链）",
+          "D-11 删除不可逆性验证测试",
+          "D-12 Phase D 验收"
+        ]
+      },
+      {
+        "id": "E",
+        "name": "执行器与摘要器",
+        "task_count": 13,
+        "hours": 10,
+        "key_tasks": [
+          "E-01 ExecutorService ABC + Task/TaskResult",
+          "E-02 线程池执行器",
+          "E-03 进度回调",
+          "E-04 超时控制",
+          "E-05 取消机制",
+          "E-06 test_executor.py",
+          "E-07 SummarizerService ABC",
+          "E-08 结果模板库",
+          "E-09 模板渲染实现",
+          "E-10 LLM 润色 + 人设注入",
+          "E-11 test_template_sum.py",
+          "E-12 test_llm_sum.py",
+          "E-13 Phase E 验收"
+        ]
+      },
+      {
+        "id": "F",
+        "name": "工具框架与文件工具",
+        "task_count": 22,
+        "hours": 17,
+        "key_tasks": [
+          "F-01 ToolResult dataclass",
+          "F-02 BaseTool ABC",
+          "F-03 @tool 装饰器",
+          "F-04 params_schema 校验",
+          "F-05 test_tool_base.py",
+          "F-06 file_search 实现",
+          "F-07 file_search 测试",
+          "F-08 file_list 实现",
+          "F-09 file_list 测试",
+          "F-10 file_read 实现",
+          "F-11 file_read 测试",
+          "F-12 file_rename 实现",
+          "F-13 file_rename 测试",
+          "F-14 file_move 实现",
+          "F-15 file_move 测试",
+          "F-16 file_delete 实现（回收站）",
+          "F-17 file_delete 测试（可恢复性验证）",
+          "F-18 工具集成测试（多工具协作）",
+          "F-19 错误处理与边界测试",
+          "F-20 大目录性能测试",
+          "F-21 工具覆盖率报告",
+          "F-22 Phase F 验收"
+        ]
+      },
+      {
+        "id": "G",
+        "name": "实体追踪",
+        "task_count": 5,
+        "hours": 4,
+        "key_tasks": [
+          "G-01 EntityTracker 骨架",
+          "G-02 push_files / push_action",
+          "G-03 resolve 指代解析（第一个/那些/它）",
+          "G-04 栈容量限制与溢出策略",
+          "G-05 test_tracker.py + Phase G 验收"
+        ]
+      },
+      {
+        "id": "H",
+        "name": "集成与验收",
+        "task_count": 16,
+        "hours": 14,
+        "key_tasks": [
+          "H-01 kernel_plugin.py",
+          "H-02 router_plugin.py",
+          "H-03 safety_plugin.py",
+          "H-04 executor_plugin.py",
+          "H-05 file_tools_plugin.py",
+          "H-06 summarizer_plugin.py",
+          "H-07 config.yaml 添加 agent 段",
+          "H-08 app.py 初始化 Agent 层",
+          "H-09 app.py 优雅关闭",
+          "H-10 pet_window.py Agent 分支逻辑",
+          "H-11 pet_window.py _on_agent_result 回调",
+          "H-12 确认流程状态机",
+          "H-13 保留原 LLM 降级路径",
+          "H-14 端到端测试（找文件流程）",
+          "H-15 端到端测试（删除确认流程）",
+          "H-16 延迟测量 + 全量回归 + Phase H 验收"
+        ]
+      }
+    ]
+  },
+  "acceptance_gates": [
+    {
+      "gate": "G0",
+      "after": "Phase A",
+      "criteria": ["内核覆盖率 >90%", "现有测试零回归", "5 分钟内核示例可运行"]
+    },
+    {
+      "gate": "G1",
+      "after": "Phase B+C",
+      "criteria": ["并行管线事件流可观测", "规则路由准确率 >90%", "感知延迟 <1.5s（模拟）"]
+    },
+    {
+      "gate": "G2",
+      "after": "Phase D+E+F",
+      "criteria": ["安全边界测试 0 失败", "删除 100% 可恢复", "6 个文件工具全通过"]
+    },
+    {
+      "gate": "G3",
+      "after": "Phase G+H",
+      "criteria": ["端到端流程跑通", "总延迟 <3s", "误操作率 0", "现有语音功能无回归"]
+    }
+  ],
+  "critical_path": [
+    "A-01 → A-02 → A-03 → A-07 → A-08 → A-09 → A-11 → A-12 → A-14 → A-17 → A-18 → A-19 → A-22",
+    "A-22 → B-01 → B-05 → B-07 → B-08 → C-01 → C-03 → C-04 → C-13 → D-01 → D-03 → D-04",
+    "D-04 → F-01 → F-02 → F-16 → F-17 → H-07 → H-08 → H-10 → H-14 → H-16"
+  ],
+  "parallelizable_groups": [
+    {
+      "group": "内核测试并行",
+      "tasks": ["A-05", "A-13", "A-21"],
+      "note": "各自独立模块的测试，可并行编写"
+    },
+    {
+      "group": "文档并行",
+      "tasks": ["A-23"],
+      "note": "代码完成后可并行写文档"
+    },
+    {
+      "group": "文件工具并行",
+      "tasks": ["F-06", "F-08", "F-10", "F-12", "F-14", "F-16"],
+      "note": "6 个工具互相独立，可并行开发（但依赖 F-02 完成）"
+    }
+  ],
+  "risk_mitigation_tasks": {
+    "R1_误操作损坏文件": ["D-03", "D-04", "D-10", "D-11", "F-16", "F-17"],
+    "R2_LLM_API不稳定": ["C-13", "C-14"],
+    "R3_并行管线竞态": ["B-07", "B-11"],
+    "R4_延迟反而增加": ["B-13", "B-14", "H-16"],
+    "R5_架构复杂难维护": ["A-11", "A-20", "A-21"],
+    "R6_与现有管线冲突": ["H-13", "H-16"]
+  }
+}

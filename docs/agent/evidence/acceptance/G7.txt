@@ -1,0 +1,159 @@
+# 关卡: G7 G0 内核示例可运行
+# 命令: C:\Python312\python.exe docs/agent/examples/kernel_demo.py
+# 用时: 0.1s
+# 退出码: 0
+# 外部依赖: 否
+------------------------------------------------------------------------
+欣雅插件内核 core/kernel 能力演示
+仓库根目录：E:\程序\桌面宠物\xiaoyi-vrm-worktree
+Python：3.12.8    标准库 + core/kernel，无第三方依赖
+说明：每节都做真实断言，任一断言不成立则退出码为 1。
+
+========================================================================
+  [1/5] 事件总线 EventBus：on / emit / disposer 退订 / on_any 通配 / 多处理器
+========================================================================
+  [OK]   on() 注册后 handler_count == 1
+  [OK]   event_types() 列出已订阅的事件名（事件名是字符串常量）
+  [OK]   emit() 触发处理器一次
+  [OK]   处理器收到的 Event.type 与订阅的事件名一致
+  [OK]   emit(source=...) 写入 Event.source
+  [OK]   emit(**data) 原样进入 Event.data（不吞字段）
+  [OK]   Event.timestamp 自动填充
+  [OK]   同一事件可挂多个处理器（计数 3）
+  [OK]   on_any() 注册后 any_handler_count == 1
+  [OK]   抛异常的处理器不影响同事件上的其他处理器（异常隔离）
+  [OK]   多个处理器按注册顺序被调用
+  [OK]   退订前的处理器每次 emit 都收到事件
+  [OK]   on_any 收到其它类型的事件（真通配，非同名订阅）
+  [OK]   只订阅 task.progress 的处理器不会被别的事件触发
+  [OK]   退订后 handler_count 减 1
+  [OK]   退订后处理器计数不再增加（disposer 真的摘掉了订阅）
+  [OK]   退订的处理器确实收不到后续事件
+  [OK]   disposer 幂等：重复调用不会误删其他订阅（计数仍为 3）
+  [OK]   once() 只触发一次
+  [OK]   once() 触发后自动退订
+  [OK]   off() 移除已注册处理器返回 True
+  [OK]   off() 重复移除返回 False（不抛异常）
+  [OK]   on_any 的 disposer 生效（通配计数归零）
+  [OK]   退订后通配处理器不再收到任何事件
+  [OK]   clear() 清空全部订阅（含通配）
+  [OK]   clear() 后 event_types() 为空
+
+========================================================================
+  [2/5] Context：provide / use / use_or / has / ServiceNotFound / fork 隔离 / dispose
+========================================================================
+  [OK]   provide 后 has() 为 True
+  [OK]   use() 取回的是同一个对象（is 同一性）
+  [OK]   use_or() 命中时返回真实实现
+  [OK]   use_or() 未注册时返回默认值（不抛异常）
+  [OK]   has() 对未注册名字返回 False
+  [OK]   use() 未注册服务抛 ServiceNotFound
+  [OK]   ServiceNotFound 是 ServiceError 子类（可统一兜底）
+  [OK]   异常携带缺失的服务名
+  [OK]   异常消息包含服务名（日志可读）
+  [OK]   provide 空服务名抛 ValueError
+  [OK]   fork() 子上下文深度为 1，父仍为 0
+  [OK]   子上下文能取到自己注册的服务
+  [OK]   fork 里 provide 不影响父上下文（子注册对父不可见）
+  [OK]   子上下文可读父级服务（use 沿父链查找）
+  [OK]   子上下文 use_or 命中自身注册
+  [OK]   fork 后父子上下文都还可用
+  [OK]   子上下文 dispose() 后 disposed 为 True
+  [OK]   child.dispose() 只清理自己的注册，父上下文不受影响
+  [OK]   child.dispose() 不会连带清理父上下文
+  [OK]   provide 返回的 disposer 撤销了注册
+  [OK]   disposer 幂等（重复调用不报错、不误删）
+  [OK]   旧实现的 disposer 不会误删覆盖后的新实现
+  [OK]   dispose() 后 disposed 为 True
+  [OK]   dispose() 后服务表被清空（能力全部下线）
+  [OK]   dispose() 幂等：重复调用无副作用
+
+========================================================================
+  [3/5] Service 生命周期：Service 子类 + start()/dispose() + disposer 热插拔
+========================================================================
+  [OK]   直接实例化 Service 基类抛 TypeError
+  [OK]   capability_name 未声明时从类名自动推导（DemoEchoService -> demo_echo_service）
+  [OK]   显式声明的 capability_name 不被覆盖
+  [OK]   start() 被调用一次（生命周期起点）
+  [OK]   实现类是 Service 子类
+  [OK]   实现类满足 Disposable 协议（isinstance 检查通过）
+  [OK]   多态：可按实现类型判断
+  [OK]   能力按名注册后可取回（Seam 的 Provider/Consumer 连接点）
+  [OK]   同名 provide 覆盖实现（换 Provider 不改 Consumer）
+  [OK]   撤销新实现的注册后服务不可用（disposer 即热插拔开关）
+  [OK]   旧实现的 disposer 不会让被覆盖的旧实现复活
+  [OK]   dispose() 释放资源被调用一次
+  [NOTE] Context.dispose() 之后 probe.disposed = 0：provide() 的 disposer 只把服务从表里摘除，不会调用实现对象的 dispose()。core/kernel/service.py 中 Disposable 的 docstring 声称「context 清理时会自动调用其 dispose()」，与实现不一致 —— 资源释放得由插件自己挂到上下文（例如插件入口返回 disposer，由 PluginLoader 收编，见第 5 节）。此处只报告，未改动内核。
+  [OK]   第 3 节的上下文已收尾
+
+========================================================================
+  [4/5] 注册表 Registry：注册 / 查找 / 快照 / 过滤 / 注销 / 覆盖保护
+========================================================================
+  [OK]   新建注册表为空
+  [OK]   register() 从 item.name 推导注册名
+  [OK]   has() / __contains__ 都能查注册名
+  [OK]   get() 按名取回对象
+  [OK]   get() 未命中返回 None（不抛异常）
+  [OK]   register(name=...) 允许显式指定注册名
+  [OK]   len() 反映注册项数量（3 项）
+  [OK]   filter() 按谓词过滤（tool_registry 按风险筛选的现实用法）
+  [OK]   find_first() 返回首个匹配对象
+  [OK]   names() 返回快照，外部修改影响不到注册表
+  [OK]   __iter__ 基于快照，遍历过程中注册新项不会破坏迭代
+  [OK]   遍历中新增的项确实进了表（证明上面的迭代不是空转）
+  [OK]   循环里临时注册的项已清理（回到 3 项）
+  [OK]   unregister() 移除已注册项返回 True
+  [OK]   unregister() 重复移除返回 False
+  [OK]   已被 unregister 的项，其 disposer 调用是空操作（计数不再变化）
+  [OK]   旧 disposer 不会误删覆盖后的新对象
+  [OK]   无法推导注册名时抛 ValueError
+  [OK]   clear() 清空注册表
+  [OK]   ctx.registry(kind) 同类型返回同一实例
+  [OK]   has_registry() 如实反映注册表是否已创建
+  [NOTE] ctx.dispose() 后 ctx.registry('tool') 返回的是新实例（同一实例=False，旧表仍有 1 项）：dispose() 只是丢弃了注册表引用，不清空表内已注册项。此处只报告，未改动内核。
+  [OK]   第 4 节的上下文已收尾
+
+========================================================================
+  [5/5] 插件加载器 PluginLoader：配置解析 / 拓扑排序 / 加载 / 卸载 / 失败回滚
+========================================================================
+  [NOTE] 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_0owshey1
+  [OK]   parse_config() 保持配置书写顺序（app 在前）
+  [OK]   resolve_order() 拓扑排序把被依赖的 base_plugin 排到前面
+       - 假插件 base_plugin 已加载：注册 base_service
+       - 假插件 app_plugin 已加载：成功读到 base_service
+  [OK]   load_all() 成功列表 = ['base_plugin', 'app_plugin']
+  [OK]   无插件加载失败
+  [OK]   两个假插件注册的能力在共享上下文里都可用
+  [OK]   app_plugin 读到的依赖确实是 base_service（顺序正确）
+  [OK]   loader 记录已加载 2 个插件
+  [OK]   loaded_ids() 反映真实加载顺序
+  [OK]   假插件自报的加载顺序 = ['base_plugin.load', 'app_plugin.load']（被依赖者先加载）
+  [OK]   依赖不存在的插件抛 MissingDependencyError
+  [OK]   异常携带缺失的依赖名
+  [OK]   依赖成环抛出 CircularDependencyError
+  [OK]   环路径首尾闭合（报错信息可读）
+  [OK]   enabled=false 的插件在解析阶段被跳过
+  [OK]   重复插件 id 抛 ConfigError
+  [OK]   入口抛异常的插件记为失败（不向调用方抛异常）
+  [OK]   失败插件的半成品注册已被回滚（不留脏状态）
+       - 假插件 base_plugin 的入口 disposer 被调用
+  [OK]   unload() 返回 True
+  [OK]   卸载后 base_service 不可用
+  [OK]   卸载 base 不影响 app 自己的注册（撤销按插件归属，不是一刀切）
+  [OK]   入口函数返回的 disposer 被 loader 收编，卸载时确实被调用
+  [OK]   卸载后 loader 计数为 1
+  [OK]   is_loaded() 反映卸载结果
+  [OK]   unload 未加载的插件返回 True（幂等）
+  [OK]   unload_all() 卸载剩余插件并返回数量
+  [OK]   全部卸载后插件能力无残留
+  [OK]   loader 状态清空
+
+========================================================================
+  [总结] 断言统计与观察
+========================================================================
+  通过 113 条，失败 0 条
+  运行中的观察项（3 条，未断言、未改内核）：
+    1. Context.dispose() 之后 probe.disposed = 0：provide() 的 disposer 只把服务从表里摘除，不会调用实现对象的 dispose()。core/kernel/service.py 中 Disposable 的 docstring 声称「context 清理时会自动调用其 dispose()」，与实现不一致 —— 资源释放得由插件自己挂到上下文（例如插件入口返回 disposer，由 PluginLoader 收编，见第 5 节）。此处只报告，未改动内核。
+    2. ctx.dispose() 后 ctx.registry('tool') 返回的是新实例（同一实例=False，旧表仍有 1 项）：dispose() 只是丢弃了注册表引用，不清空表内已注册项。此处只报告，未改动内核。
+    3. 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_0owshey1
+kernel_demo: 113/113 通过

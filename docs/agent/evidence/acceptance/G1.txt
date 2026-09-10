@@ -1,0 +1,6 @@
+# 关卡: G1 语法检查（全部改动模块）
+# 命令: C:\Python312\python.exe -m py_compile agent/tools/browser_tools.py agent/tools/productivity_tools.py agent/tools/file_tools.py agent/providers/planner/llm_planner.py agent/providers/productivity/llm_translate.py agent/providers/productivity/open_meteo.py agent/providers/productivity/reminder_scheduler.py agent/plugins/productivity_providers_plugin.py agent/plugins/productivity_tools_plugin.py agent/seams/planner.py agent/providers/safety/basic_guard.py core/app.py core/kernel/events.py ui/pet_window.py plugins/llm/openrouter/plugin.py tools/verify_gui_launch.py
+# 用时: 0.4s
+# 退出码: 0
+# 外部依赖: 否
+------------------------------------------------------------------------

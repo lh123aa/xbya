@@ -1,0 +1,119 @@
+# 关卡: G3 覆盖率（项目口径 100%）
+# 命令: C:\Python312\python.exe -m pytest tests/agent tests/kernel -q --cov=core.kernel --cov=agent --cov=services.ack_cache --cov-report=term-missing
+# 用时: 43.7s
+# 退出码: 0
+# 外部依赖: 否
+------------------------------------------------------------------------
+........................................................................ [  3%]
+........................................................................ [  6%]
+........................................................................ [ 10%]
+........................................................................ [ 13%]
+........................................................................ [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 23%]
+........................................................................ [ 27%]
+........................................................................ [ 30%]
+........................................................................ [ 33%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 44%]
+........................................................................ [ 47%]
+........................................................................ [ 50%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 61%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+s....................................................................... [ 78%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+........................................................................ [ 91%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+.................................                                        [100%]
+============================== warnings summary ===============================
+tests/agent/test_integration.py::TestPetWindowBridge::test_agent_disabled_without_app
+  C:\Python312\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+    from pkg_resources import resource_stream, resource_exists
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.12.8-final-0 _______________
+
+Name                                                 Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------------------
+agent\__init__.py                                        2      0   100%
+agent\bootstrap.py                                     184      0   100%
+agent\message.py                                        62      0   100%
+agent\pipeline.py                                      600      0   100%
+agent\plugins\__init__.py                               38      0   100%
+agent\plugins\browser_tools_plugin.py                   13      0   100%
+agent\plugins\executor_plugin.py                        11      0   100%
+agent\plugins\file_tools_plugin.py                      13      0   100%
+agent\plugins\kernel_plugin.py                           6      0   100%
+agent\plugins\memory_plugin.py                          34      0   100%
+agent\plugins\pipeline_plugin.py                        53      0   100%
+agent\plugins\planner_plugin.py                         34      0   100%
+agent\plugins\productivity_providers_plugin.py          25      0   100%
+agent\plugins\productivity_tools_plugin.py              42      0   100%
+agent\plugins\router_plugin.py                          26      0   100%
+agent\plugins\safety_plugin.py                          14      0   100%
+agent\plugins\summarizer_plugin.py                      25      0   100%
+agent\plugins\system_tools_plugin.py                    13      0   100%
+agent\providers\__init__.py                              0      0   100%
+agent\providers\executor\__init__.py                     0      0   100%
+agent\providers\executor\thread_pool.py                124      0   100%
+agent\providers\memory\__init__.py                       5      0   100%
+agent\providers\memory\hashing_embedder.py              55      0   100%
+agent\providers\memory\hybrid_memory.py                114      0   100%
+agent\providers\memory\recall_store.py                 493      0   100%
+agent\providers\memory\st_embedder.py                   84      0   100%
+agent\providers\planner\__init__.py                      4      0   100%
+agent\providers\planner\hybrid_planner.py               74      0   100%
+agent\providers\planner\llm_planner.py                 215      0   100%
+agent\providers\planner\template_planner.py            218      0   100%
+agent\providers\productivity\__init__.py                 0      0   100%
+agent\providers\productivity\llm_translate.py           43      0   100%
+agent\providers\productivity\open_meteo.py              58      0   100%
+agent\providers\productivity\reminder_scheduler.py      66      0   100%
+agent\providers\router\__init__.py                       0      0   100%
+agent\providers\router\hybrid_router.py                 76      0   100%
+agent\providers\router\llm_router.py                    98      0   100%
+agent\providers\router\rule_router.py                  382      0   100%
+agent\providers\safety\__init__.py                       0      0   100%
+agent\providers\safety\basic_guard.py                  305      0   100%
+agent\providers\summarizer\hybrid_sum.py                74      0   100%
+agent\providers\summarizer\llm_sum.py                   93      0   100%
+agent\providers\summarizer\template_sum.py             140      0   100%
+agent\seams\__init__.py                                  0      0   100%
+agent\seams\embedder.py                                 62      0   100%
+agent\seams\executor.py                                 24      0   100%
+agent\seams\memory.py                                  110      0   100%
+agent\seams\planner.py                                 150      0   100%
+agent\seams\router.py                                   26      0   100%
+agent\seams\safety.py                                   47      0   100%
+agent\seams\summarizer.py                               66      0   100%
+agent\text_norm.py                                      18      0   100%
+agent\tools\__init__.py                                  0      0   100%
+agent\tools\base.py                                    101      0   100%
+agent\tools\browser_tools.py                           243      0   100%
+agent\tools\file_tools.py                              454      0   100%
+agent\tools\memory_tools.py                            130      0   100%
+agent\tools\productivity_tools.py                      241      0   100%
+agent\tools\registry.py                                 91      0   100%
+agent\tools\system_tools.py                            345      0   100%
+agent\tracker.py                                       179      0   100%
+agent\tracker_store.py                                 101      0   100%
+core\kernel\__init__.py                                  5      0   100%
+core\kernel\context.py                                  99      0   100%
+core\kernel\events.py                                   81      0   100%
+core\kernel\loader.py                                  201      0   100%
+core\kernel\registry.py                                 48      0   100%
+core\kernel\service.py                                  36      0   100%
+services\ack_cache.py                                  178      0   100%
+----------------------------------------------------------------------------------
+TOTAL                                                 6952      0   100%
+2120 passed, 1 skipped, 1 warning in 41.81s
