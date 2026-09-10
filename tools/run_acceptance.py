@@ -82,6 +82,9 @@ GATES: list[tuple[str, str, list[str], str, bool]] = [
     ("G12", "语音 5 场景回环（TTS→ASR→管线）",
      [sys.executable, "tools/voice_scenarios_loopback.py", "--model", "small"],
      r"(\d+\s*/\s*\d+\s*通过[^\n]*)", True),
+    ("G13", "仓库卫生（版本控制 / 忽略规则 / 密钥）",
+     [sys.executable, "tools/check_repo_hygiene.py"],
+     r"(仓库卫生自检：[^\n]*)", False),
 ]
 
 
