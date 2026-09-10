@@ -16,18 +16,25 @@ logger = logging.getLogger(__name__)
 class FasterWhisperASR(ASREngine):
     """Faster Whisper ASR实现"""
     
-    def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8"):
+    def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8",
+                 initial_prompt: str = ""):
         """
         初始化Faster Whisper ASR
-        
+
         Args:
             model_size: 模型大小（tiny, base, small, medium, large-v3）
             device: 计算设备（cpu, cuda）
             compute_type: 计算类型（int8, float16, float32）
+            initial_prompt: 解码偏置（可选）。给 Whisper 一段"可能的用词"，
+                它会倾向于把音频往这些词上靠。**短句（1~2 字）最吃这个**：
+                实测「算了」在无偏置下会被听成「散了」「三郎」（P4-B5），
+                而这两个字决定了"用户到底取没取消"。
+                默认空 = 不偏置（保持原行为，向后兼容）。
         """
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.initial_prompt = initial_prompt or ""
         self.model = None
         self._available = False
         self._load_attempted = False
@@ -67,9 +74,16 @@ class FasterWhisperASR(ASREngine):
             logger.error(f"加载Faster Whisper模型失败: {e}")
             return False
     
-    def transcribe(self, audio_path: str) -> Optional[str]:
+    def transcribe(self, audio_path: str, initial_prompt: Optional[str] = None) -> Optional[str]:
         """
         将音频文件转为文本
+
+        Args:
+            audio_path: 音频路径
+            initial_prompt: 覆盖本次调用的解码偏置；None 时用构造时的 `initial_prompt`
+                （即 config 里的 `asr.faster_whisper.initial_prompt`）。
+                留成"可覆盖"是为了让 `tools/measure_asr_stimulus.py --short`
+                能对同一批音频做**有偏置 / 无偏置的 A/B**，而不是靠改配置再比。
         """
         if not self._ensure_loaded() or self.model is None:
             logger.error("Faster Whisper模型未加载")
@@ -81,6 +95,7 @@ class FasterWhisperASR(ASREngine):
             # 增强音频音量
             enhanced_path = self._enhance_audio(audio_path)
             target_path = enhanced_path if enhanced_path else audio_path
+            prompt = self.initial_prompt if initial_prompt is None else initial_prompt
             
             # 执行识别（beam=5：更准；中文精度优先，本机8核CPU可承受）
             segments, info = self.model.transcribe(
@@ -92,6 +107,8 @@ class FasterWhisperASR(ASREngine):
                 no_speech_threshold=0.6,   # 放宽：更倾向判定为语音，减少漏听
                 log_prob_threshold=-1.0,   # 放宽：保留更多中文片段
                 word_timestamps=True,
+                # 解码偏置只在**显式配置了**才传：默认不传 = 与改动前逐字节同行为
+                **({"initial_prompt": prompt} if prompt else {}),
             )
 
             # 合并片段

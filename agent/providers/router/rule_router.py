@@ -103,6 +103,22 @@ CANCEL_PHRASES: List[str] = [
     "不做了", "不执行", "停下", "停止", "否", "不对",
 ]
 
+#: 单字确认/取消语旁边允许出现的**语气助词**（P4-B5）
+#:
+#: 只收真正的语气词/话语标记，绝不能把「是 / 对 / 行 / 不」这类**实义字**放进来 ——
+#: 放进来会让「你是否在听」重新变成 cancel、或让否定句变成确认。
+SINGLE_CHAR_FILLERS = set("呀啊哦呃吧啦呢嘛哈哟噢唉诶那的咯喽")
+
+
+def _strip_fillers(text: str) -> str:
+    """去掉标点与空白，只留字（用于单字短语的"整句成立"判定）
+
+    只在 `_matches_any` 里被调用，而它已经在入口挡掉了空文本 ——
+    所以这里不做 `or ""` 兜底：那个分支永远走不到，留着就是一行不可达代码。
+    """
+    return re.sub(r"[^\w]", "", str(text))
+
+
 #: 多步标记（计数式）：用户明确告知"这件事分几步做"
 #: 只收「分N步」形态 —— 裸的「两步」「三步」太容易出现在无关说法里（如"隔两步"）
 PLAN_COUNT_MARKERS: List[str] = [
@@ -418,7 +434,7 @@ class RuleRouter(RouterService):
                     confidence=0.95,
                     source=context.get("source", "voice"),
                 )
-            if self._matches_any(norm, CONFIRM_PHRASES):
+            if self._matches_any(norm, CONFIRM_PHRASES, strict=True):
                 return AgentCommand(
                     action="confirm",
                     params={},
@@ -640,11 +656,59 @@ class RuleRouter(RouterService):
         return re.sub(r"\s+", " ", to_simplified(text)).strip().lower()
 
     @staticmethod
-    def _matches_any(text: str, phrases: List[str]) -> bool:
-        """文本是否命中任一短语（长短语优先，避免"好"吃掉"好的"）"""
-        for p in sorted(phrases, key=len, reverse=True):
-            if p in text:
-                return True
+    def _matches_any(text: str, phrases: List[str], strict: bool = False) -> bool:
+        """文本是否命中任一短语
+
+        ## 为什么确认方向与取消方向的宽严**必须不同**（P4-B5）
+
+        四个方向的代价完全不对称：
+
+        | 出错方向 | 代价 |
+        |---------|------|
+        | 误判成 **confirm** | **直接放过待确认的删除** —— 用户没批准的事被执行（R1，最高风险） |
+        | 误判成 cancel | 待确认项被撤掉，用户再说一遍即可（无损） |
+        | 漏判 confirm | 待确认项挂着，用户再说一遍（无损） |
+        | 漏判 cancel | 待确认项挂着，用户以为取消了（B5 的原始抱怨，非破坏性） |
+
+        所以：**确认从严（`strict=True`）、取消从宽（默认）**。
+
+        ## 严格档（confirm）
+
+        剥掉标点后，短语命中且**剩余字符只能是语气助词**；
+        或者整句由"单字应答 + 语气助词"构成（含重复，如「嗯嗯」）。
+
+        ```
+        「确定」「好的」「嗯嗯，好的」「好呀」「嗯好」「可以的」   → 命中
+        「你好呀」「我很好」「好奇怪」「好久不见」「这不太好吧」   → 不命中
+        ```
+
+        ## 宽松档（cancel，默认）
+
+        多字短语子串命中（保住「我不要了」这种真实说法）；
+        **单字短语（如「否」）仍要求整句成立** —— 否则「你是否在听」会变成 cancel。
+
+        单字之所以在任何档位都不能做子串匹配：`CONFIRM_PHRASES` 里的「好」
+        会让「你好呀 / 我很好 / 好奇怪 / 好久不见」全部变成 `confirm`
+        （真实 `RuleRouter` 实测 5 条错判，是本轮修掉的危险缺陷）。
+        """
+        stripped = _strip_fillers(text)
+        singles = {p for p in phrases if len(p) == 1}
+        allowed = singles | SINGLE_CHAR_FILLERS
+
+        if strict:
+            # 短语命中，且**剩余字符只能是语气助词或单字应答**
+            # （剩余集里允许别的单字应答，是为了保住「好的，删吧」这种复述式确认；
+            #   它仍挡得住「这不太好吧」—— 那里的剩余是「这不太」，全不在允许集内）
+            for p in sorted(phrases, key=len, reverse=True):
+                if p in stripped and set(stripped.replace(p, "", 1)) <= allowed:
+                    return True
+        elif any(p in stripped for p in phrases if len(p) > 1):
+            # 放宽档（取消方向）：多字短语子串命中即可
+            return True
+
+        # 单字（两档都）要求整句成立
+        if singles and stripped and set(stripped) <= allowed:
+            return any(p in stripped for p in singles)
         return False
 
     def _chat_command(self, text: str, confidence: float = 0.1) -> AgentCommand:

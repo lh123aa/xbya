@@ -90,6 +90,24 @@ def _asr(model_size: str):
     return asr
 
 
+def _matches_phrase(text: str) -> bool:
+    """这段转写会不会被产品当成"确认/取消"？（用于测**误触发**）"""
+    from agent.text_norm import to_simplified
+    from agent.providers.router.rule_router import CANCEL_PHRASES, CONFIRM_PHRASES
+
+    norm = to_simplified(text).lower()
+    return any(p.lower() in norm for p in list(CONFIRM_PHRASES) + list(CANCEL_PHRASES))
+
+
+#: 对照句：都不是确认/取消语，用来测"偏置会不会把别的话拉过去"
+CONTROLS: list = [
+    "你好呀",
+    "今天天气怎么样",
+    "打开浏览器",
+    "讲个笑话",
+]
+
+
 def _hit(text: str, keywords: list) -> bool:
     """关键词命中（**先做繁简归一化**，与产品同一条判据）
 
@@ -175,11 +193,124 @@ def mode_wavdir(asr, wav_dir: Path, rounds: int) -> int:
     return 0
 
 
+def mode_short(asr, rounds: int, voice: str, model_size: str,
+               initial_prompt: str = "") -> int:
+    """短句确认/取消语命中率（P4-B5）
+
+    为什么单独一个模式：§7.3 五场景里「确定」是**最短**的一句，
+    而它决定了"用户批准后到底删不删"。实测「算了」只有 2/4 被正识，
+    于是待确认项会一直挂着 —— 用户以为取消了，程序还在等。
+
+    **三类结果必须分开报**，因为它们的修法完全不同：
+
+    | 类别 | 含义 | 该改哪儿 |
+    |------|------|---------|
+    | HIT | 正识 | — |
+    | 空输出 | 整句被丢（VAD 判成静音 / 短词门槛拦掉） | ASR 侧门槛与 VAD |
+    | 听错 | 出了字但不对（「散了」「三郎」） | 解码偏置 or 管线侧近似匹配 |
+
+    把"空输出"和"听错"混成一个"命中率"就会看不清该修哪一层 ——
+    这与 C4 里"反爬 / 解析器 bug / 网络不通"必须分开是同一条纪律。
+    """
+    from agent.providers.router.rule_router import CANCEL_PHRASES, CONFIRM_PHRASES
+
+    print(f"\n模式：短句命中率 {rounds} 次/句（P4-B5）  voice={voice}  asr={model_size}")
+    if initial_prompt:
+        print(f"解码偏置 initial_prompt = {initial_prompt!r}")
+    else:
+        print("解码偏置 initial_prompt = （无，基线）")
+    print("=" * 78)
+
+    kmap = {}
+    for p in CONFIRM_PHRASES:
+        kmap.setdefault(p, "确定")
+    for p in CANCEL_PHRASES:
+        kmap.setdefault(p, "取消")
+    targets = [(p, kmap[p]) for p in ("算了", "不用了", "停止", "取消", "确定", "确认")]
+
+    tmp = Path(tempfile.mkdtemp(prefix="stim_short_"))
+    totals = {"HIT": 0, "空输出": 0, "听错": 0}
+    for si, (text, kind) in enumerate(targets):
+        hits, empties, wrongs = 0, 0, 0
+        outs = []
+        for i in range(rounds):
+            mp3 = tmp / f"k{si}_{i}.mp3"
+            wav = tmp / f"k{si}_{i}.wav"
+            _synth(text, mp3, voice)
+            _to_wav16k(mp3, wav)
+            try:
+                hyp = (asr.transcribe(str(wav), initial_prompt=initial_prompt or None)
+                       or "").strip()
+            except TypeError:
+                # 插件尚未支持 initial_prompt（加参数前的旧版本）
+                hyp = (asr.transcribe(str(wav)) or "").strip()
+            outs.append(hyp)
+            if not hyp:
+                empties += 1
+            elif _hit(hyp, [text]):
+                hits += 1
+            else:
+                wrongs += 1
+        totals["HIT"] += hits
+        totals["空输出"] += empties
+        totals["听错"] += wrongs
+        flag = "OK  " if hits == rounds else "不稳"
+        print(f"[{flag}] {text!r}（{kind}） 正识 {hits}/{rounds}"
+              f"  空输出 {empties}  听错 {wrongs}")
+        for o in sorted(set(outs)):
+            n = outs.count(o)
+            if not o:
+                print(f"        | {n}/{rounds} 次 ← **整句被丢掉（空输出）**")
+            elif _hit(o, [text]):
+                print(f"        | {n}/{rounds} 次 {o!r}")
+            else:
+                print(f"        | {n}/{rounds} 次 {o!r}   ← **听错了**")
+
+    n = len(targets) * rounds
+    print("=" * 78)
+    print(f"短句汇总（{n} 次）：正识 {totals['HIT']}/{n}"
+          f"，空输出 {totals['空输出']}，听错 {totals['听错']}")
+
+    # ── 副作用测量：偏置会不会把**别的话**也拉到确认/取消词上？──
+    #
+    # 这一步不能省。解码偏置是"让某些词更容易被解码出来"，
+    # 那么被误拉成「确定」的代价是**执行一个用户没批准的操作**（删除走回收站也是删）。
+    # 只报"正识率上升"就收工，等于把一个更危险的副作用留在暗处。
+    false_trig = 0
+    print("\n对照（这些**不是**确认/取消语，绝不该被听成确认/取消）")
+    for text in CONTROLS:
+        outs = []
+        for i in range(rounds):
+            mp3 = tmp / f"c{abs(hash(text)) % 10000}_{i}.mp3"
+            wav = tmp / f"c{abs(hash(text)) % 10000}_{i}.wav"
+            _synth(text, mp3, voice)
+            _to_wav16k(mp3, wav)
+            try:
+                hyp = (asr.transcribe(str(wav), initial_prompt=initial_prompt or None)
+                       or "").strip()
+            except TypeError:
+                hyp = (asr.transcribe(str(wav)) or "").strip()
+            outs.append(hyp)
+        pulled = [o for o in outs if o and _matches_phrase(o)]
+        false_trig += len(pulled)
+        mark = "" if not pulled else "   ← **被拉成确认/取消语！**"
+        print(f"  {text!r}: {outs}{mark}")
+    print(f"\n误触发（非确认语被听成确认/取消语）：{false_trig}/{len(CONTROLS) * rounds}")
+
+    print("→ 空输出要改 ASR 的 VAD/短词门槛；听错要改解码偏置或管线侧近似匹配。")
+    print("  两者分开报，才知道该动哪一层。")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="测激稳定性测量（替身抖动 vs 解码确定性）")
     ap.add_argument("--synth", type=int, default=6, help="每句现场合成次数（默认 6）")
     ap.add_argument("--wav-dir", default="", help="改为对目录里的 wav 做重复解码")
     ap.add_argument("--repeat", type=int, default=6, help="每个 wav 重复解码次数（默认 6）")
+    ap.add_argument("--short", type=int, default=0,
+                    help="短句确认/取消语模式：每句合成 N 次并报命中率（P4-B5）")
+    ap.add_argument("--initial-prompt", default="",
+                    help="短句模式下传给 ASR 的解码偏置（A/B 用；空=基线）")
     ap.add_argument("--voice", default="zh-CN-XiaoxiaoNeural", help="edge_tts 中文语音")
     ap.add_argument("--model", default="small", help="faster-whisper 模型（须本机已缓存）")
     args = ap.parse_args()
@@ -187,6 +318,8 @@ def main() -> int:
     asr = _asr(args.model)
     if args.wav_dir:
         return mode_wavdir(asr, Path(args.wav_dir), args.repeat)
+    if args.short:
+        return mode_short(asr, args.short, args.voice, args.model, args.initial_prompt)
     return mode_synth(asr, args.synth, args.voice, args.model)
 
 

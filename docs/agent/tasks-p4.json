@@ -26,7 +26,7 @@
     "P4-B2": "done",
     "P4-B3": "done",
     "P4-B4": "partially_done",
-    "P4-B5": "pending",
+    "P4-B5": "done",
     "P4-C1": "pending",
     "P4-C2": "pending",
     "P4-C3": "pending",
@@ -200,6 +200,7 @@
         "管线侧兜底（如实现）有用例覆盖"
       ],
       "evidence": "docs/agent/evidence/p4/short_phrase.txt",
+      "outcome": "done（2026-09-11）。`measure_asr_stimulus.py` 新增 `--short N` 模式，并把结果**分三类**报（正识/空输出/听错）——混成一个命中率就看不清该修哪一层。基线（4 次/句，TTS 替身）：正识 18/24、空输出 2、听错 4；「算了」**0/4**（4 次全被听成「散了」），「不用了」2/4（另 2 次整句被丢）。加解码偏置 `initial_prompt` 后六句全部 4/4 → **24/24、空输出 0、听错 0**，故按『能改善则改』落地到 `config.yaml` 的 `plugins.asr.params.initial_prompt`（`transcribe()` 支持逐次覆盖供 A/B；未配置时不传该参数 = 与改动前同行为）。副作用也测了：4 句非确认语在偏置下 16/16 未被拉成确认语。★ **顺带抓到一个比原缺陷严重得多的危险缺陷**：`RuleRouter._matches_any` 是朴素子串匹配，而 `CONFIRM_PHRASES` 含单字「好」、`CANCEL_PHRASES` 含单字「否」，于是待确认项存在时「你好呀」「我很好」「好奇怪」「好久不见」全被判成 `confirm`（**一句招呼就放过待确认的删除**）、「你是否在听」被判成 `cancel` —— 真实 RuleRouter 实测修前 5 条错判、修后 0 条。修法写进契约：**确认从严、取消从宽**（四类出错方向代价不对称，误 confirm 会直接产生副作用）；单字短语两档都不做子串匹配。过程中我的第一版修法被自己的测试推翻一次（「这不太好吧」因含「好吧」被判 confirm），才改成宽严分档。新增 tests/agent/test_short_phrase_confirm.py 58 项。**真人语音仍未验证**（本节全部来自 TTS 替身链路，不可外推）。另登记：`services/voice_service.py` 加载 ASR 时不传 params，与 `core/app.py::_load_plugins` 不一致 → `model_size`/`initial_prompt` 在该路径静默失效（本轮未改，会动到受 G12 保护的语音路径）。门禁：G1 2626 passed/1 skipped/0 failed、G2 7175 语句 100%。",
       "blocked_by": []
     },
     {

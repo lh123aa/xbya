@@ -91,8 +91,8 @@ agent:
     id: pipeline
     module: agent.plugins.pipeline_plugin
   productivity:
+    reminder_persist: true
     reminder_scheduler: true
-    reminder_persist: true                      # P4-A2 / D13：提醒落盘，进程重启不丢
     reminder_store: ./data/agent_reminders.json
     translate: true
     weather: true
@@ -133,6 +133,16 @@ plugins:
       compute_type: int8
       device: cpu
       model_size: medium
+      # 解码偏置（P4-B5）：给 Whisper 一段「可能的用词」，短句最吃这个。
+      # 实测（python tools/measure_asr_stimulus.py --short 4，TTS 替身，每句 4 次）：
+      #   无偏置：「算了」0/4（4 次全被听成「散了」）、「不用了」2/4（另 2 次整句被丢）；
+      #           六句合计 正识 18/24、空输出 2、听错 4
+      #   加偏置：六句全部 4/4 → 正识 24/24、空输出 0、听错 0
+      # 副作用也测过：4 句**非**确认语（你好呀/今天天气怎么样/打开浏览器/讲个笑话）
+      #   在偏置下 16/16 均未被拉成确认语（样本不大，仅作参考）。
+      # 注意：这只证明偏置有效，**不**证明"真人说「算了」也会被听成「散了」" ——
+      # 测的是 TTS 替身那条链路；真人那一条见 docs/agent/manual-acceptance.md。
+      initial_prompt: "算了 不用了 停止 取消 确定 确认"
   avatar:
     engine: liveportrait
     params:
