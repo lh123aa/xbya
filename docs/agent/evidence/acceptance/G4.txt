@@ -9,19 +9,19 @@
 ======================================================================
 
 装配结果：tools=21 router=HybridRouter enabled=True
-白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_accept_9ypwai9x']
+白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_accept_qg_3tw2b']
 
 [PASS] 工具集装配  → 21 个工具
 [PASS] Agent 层已启用
 
 [场景 1] 只读指令：搜索文件
-[PASS] file_search 返回结果  → 找到「合同_2025.pdf」，5字节，9月10号
+[PASS] file_search 返回结果  → 找到「合同_2025.pdf」，5字节，9月11号
 [PASS] 结果为成功状态
 [PASS] 工具识别正确  → file_search
 [PASS] 总延迟 < 3s  → 24ms
 
 [场景 2] 只读指令：系统状态
-[PASS] system_info 返回结果  → CPU 用了 10.4%，内存用了 60.6%，电量 0%，磁盘用了 90.6%
+[PASS] system_info 返回结果  → CPU 用了 16.7%，内存用了 61.8%，电量 0%，磁盘用了 90.6%
 
 [场景 3] 危险指令：删除 → 确认 → 取消（不应落盘）
 [PASS] 发出确认请求  → 找到 1 个文件（截图_01.png，共 5 B）。确定要移到回收站吗？
@@ -38,7 +38,7 @@
 [PASS] 白名单外路径被拦截  → 这个位置我不能动哦，只能操作：C:\Users\49046\AppData\Local\Temp\x
 
 [场景 6] 延迟与统计
-  pipeline.stats() = {'commands': 7, 'tool_calls': 3, 'chats': 0, 'rejected': 1, 'confirms': 2, 'result_p50_ms': 7.7, 'result_p95_ms': 553.8}
+  pipeline.stats() = {'commands': 7, 'tool_calls': 3, 'chats': 0, 'rejected': 1, 'confirms': 2, 'result_p50_ms': 8.2, 'result_p95_ms': 577.7}
 [PASS] 指令计数正确  → commands=7
 [PASS] 确认计数正确  → confirms=2
 

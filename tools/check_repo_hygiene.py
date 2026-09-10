@@ -254,8 +254,17 @@ def main() -> int:
               txt.splitlines()[-1] if txt else "")
 
     # ── 7. 忽略规则仍在生效（防"规则被误删"）──
-    for path, want_ignored in (("config.yaml", True), ("models", True),
-                               ("data", True), (".coverage", True)):
+    #
+    # 用**目录内路径**而不是裸目录名：`git check-ignore -q data` 在 data/ 不存在时
+    # 会返回 1（git 无法判定它是不是目录），于是"规则好好的"被报成失败；
+    # 而 `data/x.db` 无论目录是否存在都能被 `data/` 规则匹配 —— 环境无关。
+    # 这一条是 P4-A1 写证据时实测踩出来的（`logs/` 明明有效却报 exit=1）。
+    for path, want_ignored in (("config.yaml", True),
+                               ("data/任意文件.db", True),
+                               ("models/任意.ckpt", True),
+                               (".coverage", True),
+                               ("logs/任意.log", True),
+                               ("docs/agent/evidence/voice/fixtures/任意.wav", False)):
         rc, _ = git("check-ignore", "-q", path)
         ignored = rc == 0
         check(ignored == want_ignored,
