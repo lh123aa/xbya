@@ -21,7 +21,7 @@
   "status": {
     "P4-A1": "done",
     "P4-A2": "done",
-    "P4-A3": "pending",
+    "P4-A3": "delivered_pending_human",
     "P4-B1": "pending",
     "P4-B2": "pending",
     "P4-B3": "pending",
@@ -32,7 +32,7 @@
     "P4-C3": "pending",
     "P4-C4": "pending",
     "P4-C5": "pending",
-    "note": "P4-A1 完成（2026-09-11）：重建仓库 main 分支、4 个提交；.gitignore 补 models/（85MB ckpt）、data/ 整目录、.coverage；新增 tools/check_repo_hygiene.py 并接入为验收关卡 G13（内部关卡 6→7）；新增 tools/make_config_example.py 修复过期模板；13 关验收内部 7/7、外部 6/6；仓库卫生自检 17/17。P4-A2 完成（2026-09-11）：新增 agent/reminder_store.py + agent/store_guard.py，ReminderTool 接持久化并恢复于调度器启动之前；新增 tools/reminders_cli.py，F7 增 F7-e 三进程验收（27→32 断言）；全量 2508 passed / 覆盖率 7128 语句 100%；13 关验收内部 7/7、外部 6/6。P4-B4 的扫描器部分由 A1 提前交付（G13 已含密钥扫描），剩余为用户轮换 key。"
+    "note": "P4-A1 完成（2026-09-11）：重建仓库 main 分支、7 个提交；.gitignore 补 models/（85MB ckpt）、data/ 整目录、.coverage；新增 tools/check_repo_hygiene.py 并接入为验收关卡 G13（内部关卡 6→7）；新增 tools/make_config_example.py 修复过期模板。P4-A2 完成：新增 agent/reminder_store.py + agent/store_guard.py，ReminderTool 接持久化并恢复于调度器启动之前；新增 tools/reminders_cli.py，F7 增 F7-e 三进程验收（27→32 断言）。P4-A3 交付（delivered_pending_human）：manual-acceptance.md + prepare_manual_acceptance.py + check_manual_evidence.py + evidence/manual/ —— 包做完 ≠ 验收通过，麦克风/GUI/人耳只有人能判。P0 阶段门禁：13 关验收内部 7/7、外部 6/6；全量 2508 passed / 覆盖率 7128 语句 100%。P4-B4 的扫描器部分由 A1 提前交付（G13 已含密钥扫描），剩余为用户轮换 key。"
   },
   "tasks": [
     {
