@@ -1,0 +1,146 @@
+P4-B4 证据：免费端点实测结论（用户指示：先不轮换 key，用免费 API 测试）
+======================================================================
+日期：2026-09-11
+任务：docs/agent/tasks-p4.json §P4-B4
+工具：tools/probe_free_llm_matrix.py（新增）、tools/probe_llm_capability.py（修 2 处）
+机器可读：docs/agent/evidence/p4/free_llm_matrix.json
+
+【零】用户决定（写清楚，避免以后被读成"没做"）
+--------------------------------------------------------------
+· 两个 key（gsk_* / sk-or-v1-*）早先被打印进对话，原计划要求用户轮换。
+· **用户指示：先不轮换，改用免费模型端点做测试。**
+· 因此本任务交付的是"免费端点可行性实测 + 结论"，**不是**密钥轮换完成。
+  「在控制台轮换两个 key」仍留在 human_only 里，状态 = 待人工。
+
+【一】免费端点逐条实测（2026-09-11）
+--------------------------------------------------------------
+（1）本地 Ollama —— qwen2.5:1.5b（0.92 GB，本机已装）
+      ①闲聊 PASS   冷启动 3296ms → 热态 2351ms，约 53–104 字中文
+      ②多步规划 FAIL 11415ms 返回 None
+      ③工具选择 FAIL **引擎没有 chat_with_tools**
+      → 可做「零配额、可复跑」的门禁替身，但只覆盖 ①。
+        换它当唯一 LLM 会让 LLM 路由兜底**静默失效**（B3 已让这件事可见）。
+
+（2）Groq 免费档（当前 config 主端点，model=openai/gpt-oss-120b）
+      GET /models → 14 个模型，主模型在架 ✅
+      实际调用 → HTTP 429，报文原文：
+        "Rate limit reached for model `openai/gpt-oss-120b` ... on tokens per day
+         (TPD): Limit 200000, Used 199432, Requested 1226.
+         Please try again in 4m44.256s."
+      → 是 **TPD（每日）** 不是 TPM：打满后当天不可用，重试只等来同样的报文。
+        这解释了验收 G8 里那些 429 跳过项的真实成因。
+
+（3）OpenRouter 免费模型（公开 /models，无需鉴权）
+      在架免费模型 **22** 个（:free 后缀或价格为 0）。
+      逐个探测 6 个（×3 类活）：
+        ①闲聊 4/6 PASS（gemma-4-31b 与 inkling 失败：前者上游 429、后者 403）
+        ②多步规划 0/6
+        ③工具选择 0/6 —— **但这 0/6 是假的，见【二】3，修正后 3/3 PASS**
+      失败的两种性质（都不是配额）：
+        · `thinkingmachines/inkling:free` → HTTP 403
+          "only available on agentic harnesses. Try plugging it into a coding agent
+           or productivity app listed on https://openrouter.ai/apps"
+        · `google/gemma-4-31b-it:free` → HTTP 429
+          "temporarily rate-limited upstream ... add your own key to accumulate your
+           rate limits"（上游侧限流，不是我们的额度）
+
+（4）OVHcloud「匿名免费」（docs/free-llm-api-providers.md 第 10 节）
+      4 个模型全部 HTTP 403 "Forbidden: authentication failed"
+      → **该文档的"匿名即可调用"已失效**（文档日期 2026-09-08，仅 3 天）。
+        结论：免费文档是快照，只有真实请求算数。
+
+【二】本任务抓到的"检查本身出错"共 4 处（全在探针里，全部已修）
+--------------------------------------------------------------
+（1）`tools/probe_llm_capability.py::_build_engine` 透传 config 参数时漏了 `model`
+    现象：探针自报"用 config.yaml 里的云端配置"，实际 `get_model_info()` 给出
+          `llama-3.1-8b-instant` —— 那是插件内置预设的默认值，不是配置里的
+          `openai/gpt-oss-120b`。
+    性质：**探针没有在测它声称测的东西**，而输出上看不出来。
+    修法：把 `"model"` 加进透传元组。
+
+（2）同文件在 `stack.dispose()` **之后**才取 `reg.names()` 做工具名比对
+    现象：稳定输出一条假 FAIL `非法=['file_search','file_move','file_delete']`，
+          而这三个名字都在注册表的 21 个工具里。
+    机理：`dispose()` 卸载全部插件 → 注册表成空集 → **每个名字都"不在表内"**。
+    修法：在 `dispose()` **之前**把 `valid_names` 快照下来。
+
+（3）`tools/probe_free_llm_matrix.py` 喂给 `chat_with_tools` 的 schema 格式不对
+    现象：六个免费模型的 ③ **全部** FAIL、`picked=None`。
+    机理：项目里有两种"llm schema"，**名字一样、形制不同**：
+            · `LLMRouter.TOOL_SCHEMAS`            → 扁平 {name, description, parameters}
+            · `ToolRegistry.to_llm_schemas()`     → 已包好 {"type":"function","function":{…}}
+          而 `UniversalLLM._tools_once` 会**再包一层** `{"type":"function","function":t}`
+          （对扁平的 TOOL_SCHEMAS 是对的）。于是 `function.name` 不存在。
+    报错原文其实已点明真相：
+            nvidia: "missing field `name`"
+            cohere: "Invalid `tools`: 0.function.name: Invalid input:
+                     expected string, received undefined"
+    修法：新增 `_flatten_schemas()`；修正后**同样的三个模型 ③ 3/3 PASS**
+          （`picked=system_info`）。
+    衍生结论（登记为 D16）：这是一个**真实存在的接口歧义**，产品当前没踩到
+          只是因为 `LLMPlanner._format_tools` 两种格式都容忍。
+
+（4）第一版矩阵探针 ② **只跑 1 次**就下结论
+    现象：三个模型 ② 全 FAIL，差点写成"免费模型不会多步规划"。
+    复核：手动直接调 `llm.chat(prompt)`，`nvidia/nemotron-3-super-120b-a12b:free`
+          **返回了 503 字的合法 JSON**，`_validated_steps` 收到 **4 步全部合法**：
+            s1 file_search({'pattern': '*软件归档*', 'dirs': ['Documents']})
+            s2 file_search({'pattern': ['*.exe','*.msi'], 'dirs': ['Downloads']})
+            s3 file_move({'source': '${s2.paths}', 'dest': '${s1.paths.0}'})
+            s4 file_delete({'targets': ['${s3.paths}'], 'dirs': ['Downloads']})
+          补充测量（3 模型 × 3 次）：**0/9 成功**，其中
+            2 次 `[planner/llm] 调用超过 20.0s 未返回`
+            7 次 `API 返回空回复`（HTTP 200 但 content 为空）
+            **429 累计 0** → 不是配额问题。
+    结论：② 的正确结论是"**间歇性**（本轮 0/9，但有单次成功证据）"，
+          不是"不能"。单次采样不足以区分这两者。
+
+【三】新发现：内置预设清单已腐坏 → 造成"静默替换"（已修 + 已加守护）
+--------------------------------------------------------------
+核对方法：GROQ `GET /openai/v1/models`（14 个）、OpenRouter `GET /models`（437 个）
+          —— 均为免费列举端点，不消耗 token。
+
+`plugins/llm/openrouter/plugin.py::PRESET_PROVIDERS` 硬编码清单逐条核对：
+    [groq]
+      llama-3.1-8b-instant   **已下架** → HTTP 404 "model_not_found"
+      gemma2-9b-it           **已下架** → HTTP 400 "has been decommissioned"
+      mixtral-8x7b-32768     **已下架** → HTTP 400 "has been decommissioned"
+    [openrouter]
+      nvidia/nemotron-3-super-120b-a12b:free  在架
+      google/gemma-4-26b-a4b-it:free          在架
+      openai/gpt-oss-20b:free                 **已不在免费清单**
+
+危害不是"报参数错"，而是**静默替换**：
+  不显式传 model 时插件取 `free_models[0]`（原是 llama-3.1-8b-instant）
+  → 每次请求先 404
+  → `_call_api` 见非 200 就降级到备用端点
+  → **回答来自备用模型，而 `get_model_info()` 报的是那个已下架的主模型名**
+  这正是本次把 `llama-3.1-8b-instant` 误读成"回话正常"的原因。
+
+处置：
+  · 两个清单都换成 2026-09-11 实测在架的模型（并注明核对方法与日期）
+  · 新增"用了预设默认模型"时的 WARNING（点名下架风险 + 核对命令）
+  · `tests/test_llm_quota_status.py` 新增 4 项守护：隐式默认必须告警、
+    显式传 model 不得告警、非预设提供商不得告警、
+    以及"这四个已下架的名字不得回到清单里"
+
+【四】仍未做 / 未验证（如实登记）
+--------------------------------------------------------------
+1. **密钥轮换未做** —— 用户明确延后。仍列在 human_only。
+2. ②多步规划在免费档上的成功率只测到 0/9（3 模型 × 3 次），
+   样本小；且免费档的上游限流会随时间变化，**不能外推**。
+3. **计划质量未测**：本轮只测"能不能拆出计划"。已有证据显示拆出来的计划里
+   参数类型常不对（`pattern` 给列表、`source` 给列表、`targets` 套了一层），
+   而 `_validated_steps` 只校验工具名、不校验参数类型 —— 这是**上游成因**，
+   与 P4-B2 同族，需要单独一轮处理（已登记，未在本任务修）。
+4. 未验证的免费提供商（Gemini / Mistral / NVIDIA NIM / Cloudflare / Cohere /
+   SiliconFlow / Z AI / Kilo / HuggingFace）全部需要注册取 key —— **AI 做不了**，
+   且用户已表示先不折腾 key。它们的状态是"未测"，不是"不可用"。
+5. `thinkingmachines/inkling:free` 的 403 说它"只在 agentic harness 里可用"，
+   需要特定请求头/接入方式；本轮未研究其可行路径。
+
+【五】门禁
+--------------------------------------------------------------
+P4-G1 全量回归：见提交信息（本任务为 plugins/ 与 tools/ 改动，不涉及覆盖率口径）
+P4-G2 覆盖率  ：plugins/ 与 core/app.py 不在口径内；口径内仍须 100%（见 B2 轮 7164 语句）
+P4-G4 13 关验收：留待本轮全部任务收口后统一跑

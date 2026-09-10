@@ -180,7 +180,8 @@
         "run_acceptance.py 内部关卡变为 7/7"
       ],
       "evidence": "docs/agent/evidence/p4/secrets.txt",
-      "human_action_required": "在 LLM 控制台轮换 gsk_* 与 sk-or-v1-* 两个 key",
+      "outcome": "partially_done（2026-09-11）。**用户决定延后轮换 key，改用免费端点实测**，故本任务交付改为『免费端点可行性结论』（见 p4-plan.md §五点五 + evidence/p4/free_llm_probe.txt）。实测：本地 Ollama 0.92GB 仅 ①闲聊可用（无 chat_with_tools）；Groq 主端点模型在架但**每日 TPD 200000 打满**（Used 199432）→ 整天不可用（不是 TPM，这解释了 G8 的 429 跳过）；OpenRouter 在架免费模型 22 个，③工具选择 **3/3 通过**、②多步规划 **0/9（间歇性，非不能——有单次成功返回 4 步合法计划的证据；429 累计 0）**；OVHcloud『匿名免费』已失效（403）。**顺带修掉内置预设清单腐坏**：Groq 三个硬编码模型全部下架（404/400），不显式传 model 时会『先失败→静默降级到备用端点』，而 get_model_info() 仍报已下架的主模型名 —— 本轮据此修正了两个清单、新增隐式默认模型的 WARNING 与 4 项守护测试。另抓到 4 处探针自身出错（漏传 model / dispose 后取 names / schema 形制喂错 / 单次采样下结论），全部已修。**密钥轮换仍未做，留在 human_only。**",
+      "human_action_required": "在 LLM 控制台轮换 gsk_* 与 sk-or-v1-* 两个 key（用户已明确延后；本轮改用免费端点测试）",
       "blocked_by": ["P4-A1"]
     },
     {

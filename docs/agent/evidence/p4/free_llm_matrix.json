@@ -1,0 +1,189 @@
+{
+  "generated_at": "2026-09-11 02:26:15",
+  "engine": "openrouter",
+  "free_model_count": 22,
+  "free_models": [
+    {
+      "id": "cohere/north-mini-code:free",
+      "ctx": 256000,
+      "name": "Cohere: North Mini Code (free)",
+      "tools": true
+    },
+    {
+      "id": "dots-studio/dots-3-note-preview:free",
+      "ctx": 512000,
+      "name": "Dots Studio: Dots3-Note Preview (free)",
+      "tools": true
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it:free",
+      "ctx": 262144,
+      "name": "Google: Gemma 4 26B A4B  (free)",
+      "tools": true
+    },
+    {
+      "id": "google/gemma-4-31b-it:free",
+      "ctx": 262144,
+      "name": "Google: Gemma 4 31B (free)",
+      "tools": true
+    },
+    {
+      "id": "google/lyria-3-clip-preview",
+      "ctx": 1048576,
+      "name": "Google: Lyria 3 Clip Preview",
+      "tools": false
+    },
+    {
+      "id": "google/lyria-3-pro-preview",
+      "ctx": 1048576,
+      "name": "Google: Lyria 3 Pro Preview",
+      "tools": false
+    },
+    {
+      "id": "inclusionai/ling-3.0-flash-fin:free",
+      "ctx": 262144,
+      "name": "inclusionAI: Ling 3.0 Flash Fin (free)",
+      "tools": true
+    },
+    {
+      "id": "inclusionai/ling-3.0-flash-sante:free",
+      "ctx": 262144,
+      "name": "inclusionAI: Ling 3.0 Flash Sante (free)",
+      "tools": true
+    },
+    {
+      "id": "inclusionai/ling-3.0-flash-vl:free",
+      "ctx": 262144,
+      "name": "inclusionAI: Ling 3.0 Flash VL (free)",
+      "tools": true
+    },
+    {
+      "id": "liquid/lfm-2.5-2.6b:free",
+      "ctx": 65536,
+      "name": "LiquidAI: LFM2.5-2.6B (free)",
+      "tools": true
+    },
+    {
+      "id": "nex-agi/nex-n2.5-mini:free",
+      "ctx": 262144,
+      "name": "Nex AGI: Nex-N2.5-Mini (free)",
+      "tools": true
+    },
+    {
+      "id": "nex-agi/nex-n2.5-pro:free",
+      "ctx": 262144,
+      "name": "Nex AGI: Nex-N2.5-Pro (free)",
+      "tools": true
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "ctx": 256000,
+      "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+      "tools": true
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "ctx": 262144,
+      "name": "NVIDIA: Nemotron 3 Super (free)",
+      "tools": true
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "ctx": 1000000,
+      "name": "NVIDIA: Nemotron 3 Ultra (free)",
+      "tools": true
+    },
+    {
+      "id": "nvidia/nemotron-3.5-content-safety:free",
+      "ctx": 128000,
+      "name": "NVIDIA: Nemotron 3.5 Content Safety (free)",
+      "tools": false
+    },
+    {
+      "id": "nvidia/nemotron-3.5-lightning:free",
+      "ctx": 1000000,
+      "name": "NVIDIA: Nemotron 3.5 Lightning (free)",
+      "tools": true
+    },
+    {
+      "id": "openrouter/free",
+      "ctx": 200000,
+      "name": "Free Models Router",
+      "tools": true
+    },
+    {
+      "id": "poolside/laguna-s-2.1:free",
+      "ctx": 262144,
+      "name": "Poolside: Laguna S 2.1 (free)",
+      "tools": true
+    },
+    {
+      "id": "poolside/laguna-xs-2.1:free",
+      "ctx": 262144,
+      "name": "Poolside: Laguna XS 2.1 (free)",
+      "tools": true
+    },
+    {
+      "id": "thinkingmachines/inkling-small:free",
+      "ctx": 1048576,
+      "name": "Thinking Machines: Inkling Small (free)",
+      "tools": true
+    },
+    {
+      "id": "thinkingmachines/inkling:free",
+      "ctx": 1048576,
+      "name": "Thinking Machines: Inkling (free)",
+      "tools": true
+    }
+  ],
+  "results": [
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "chat": true,
+      "plan": false,
+      "tools": true,
+      "chat_ms": 7852,
+      "plan_ms": 5205,
+      "reason": "",
+      "steps": null,
+      "unknown_actions": [],
+      "picked": "system_info",
+      "chat_sample": "欣雅在这里呀！~ 你的友善AI桌面管家，随时待命帮你搞定小事啦～ （一句温暖可爱",
+      "quota_blocked": false,
+      "quota_hits": 0,
+      "last_error": ""
+    },
+    {
+      "model": "inclusionai/ling-3.0-flash-sante:free",
+      "chat": true,
+      "plan": false,
+      "tools": true,
+      "chat_ms": 1232,
+      "plan_ms": 6900,
+      "reason": "",
+      "steps": null,
+      "unknown_actions": [],
+      "picked": "system_info",
+      "chat_sample": "你好呀！我是欣雅，你的AI桌面管家，可以帮你处理文件、管理日程、搜索信息，还能陪",
+      "quota_blocked": false,
+      "quota_hits": 0,
+      "last_error": ""
+    },
+    {
+      "model": "cohere/north-mini-code:free",
+      "chat": true,
+      "plan": false,
+      "tools": true,
+      "chat_ms": 2090,
+      "plan_ms": 9370,
+      "reason": "",
+      "steps": null,
+      "unknown_actions": [],
+      "picked": "system_info",
+      "chat_sample": "我叫欣雅，一个乐于助人的AI桌面管家，随时为您提供便捷、友好的服务！",
+      "quota_blocked": false,
+      "quota_hits": 0,
+      "last_error": ""
+    }
+  ]
+}

@@ -21,13 +21,24 @@ from interfaces.llm import LLMEngine
 logger = logging.getLogger(__name__)
 
 # 预设提供商配置
+#
+# ⚠️ **`free_models` 是快照，会腐坏**（P4-B4 实测）：
+# 原先这里写的 3 个 Groq 模型**全部已下架**（`llama-3.1-8b-instant` 报 404，
+# `gemma2-9b-it` / `mixtral-8x7b-32768` 报 400 "has been decommissioned"），
+# OpenRouter 的 `openai/gpt-oss-20b:free` 也已不在免费清单里。
+# 后果不是"参数报错"而是**静默替换**：`_call_api` 见非 200 就降级到备用端点，
+# 于是回答其实来自备用模型，而 `get_model_info()` 仍报主模型名 ——
+# 这一轮排查时它让一次探针跑出了"llama-3.1-8b-instant 回话正常"的假结论。
+# 核对办法（不消耗 token）：`python tools/probe_free_llm_matrix.py --list`
+# 以及 `GET {base_url}/models`；`__init__` 里对"用了预设默认模型"会打 WARNING。
 PRESET_PROVIDERS = {
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
+        # 2026-09-11 用 GET /models 核对过（当时共 14 个模型）
         "free_models": [
-            "llama-3.1-8b-instant",
-            "gemma2-9b-it",
-            "mixtral-8x7b-32768",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
         ],
         "env_key": "GROQ_API_KEY",
     },
@@ -42,10 +53,11 @@ PRESET_PROVIDERS = {
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
+        # 2026-09-11 用公开 /models 核对过（当时 22 个免费模型）
         "free_models": [
             "nvidia/nemotron-3-super-120b-a12b:free",
+            "inclusionai/ling-3.0-flash-sante:free",
             "google/gemma-4-26b-a4b-it:free",
-            "openai/gpt-oss-20b:free",
         ],
         "env_key": "OPENROUTER_API_KEY",
     },
@@ -97,6 +109,7 @@ class UniversalLLM(LLMEngine):
             fallback_*: 429 限流时自动降级的备用提供商配置
         """
         # 如果指定了预设提供商，使用其配置
+        self._model_from_preset = False
         if provider and provider in PRESET_PROVIDERS:
             preset = PRESET_PROVIDERS[provider]
             self.base_url = base_url or preset["base_url"]
@@ -104,6 +117,7 @@ class UniversalLLM(LLMEngine):
             self.api_key = api_key or os.environ.get(env_key, "")
             if not model and preset["free_models"]:
                 model = preset["free_models"][0]
+                self._model_from_preset = True
         else:
             self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
@@ -146,6 +160,20 @@ class UniversalLLM(LLMEngine):
             return
 
         self._available = True
+        # ⚠️ 没有显式给 model 时，插件会拿内置预设清单的**第一个**当默认值。
+        # 那个清单是快照、会下架，而"下架的模型"不会报参数错 ——
+        # 它会先失败、再被 `_call_api` 静默降级到备用端点，于是
+        # **回答来自备用模型而 get_model_info() 报的是主模型名**。
+        # 实测代价：一次探针据此得出"llama-3.1-8b-instant 回话正常"的假结论，
+        # 而该模型在 Groq 早已 404（P4-B4）。所以这里把"我用的是猜来的默认值"说出来。
+        if self._model_from_preset:
+            logger.warning(
+                "未显式指定 model，改用内置预设默认模型 %s —— 内置清单是快照，可能已下架；"
+                "下架时会先失败再降级到备用端点（表现为更慢，且真正回答的模型与"
+                "get_model_info() 报的不一致）。请用 config.yaml 显式配置 model，"
+                "并用 tools/probe_free_llm_matrix.py --list 核对清单。",
+                self.model,
+            )
         logger.info(f"LLM 初始化成功，模型: {self.model}，Base URL: {self.base_url}")
 
     def chat(self, prompt: str, context: List[Dict[str, Any]] = None) -> Optional[str]:

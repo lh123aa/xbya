@@ -94,6 +94,13 @@
 | D7 间歇性崩溃 | 保留登记；P4 期间回归轮次继续累计（现 28 轮 0 次） |
 | D3 多用户隔离 | 不做（无需求） |
 
+**本轮新增 2 项债务**（P4 执行期间发现，不装待办、不留隐性）：
+
+| # | 债务 | 产生原因 | 影响 | 偿还计划 |
+|---|------|---------|------|---------|
+| **D16** | **两种"llm schema"同名不同形制** | `LLMRouter.TOOL_SCHEMAS` 是**扁平** `{name, description, parameters}`；`ToolRegistry.to_llm_schemas()`（经 `BaseTool.to_llm_schema()`）返回**已包好**的 `{"type":"function","function":{…}}`；而 `UniversalLLM.chat_with_tools` 期望扁平（它自己会再包一层） | 与 D14 同族：把注册表 schema 递给 `chat_with_tools` 会得到 `function.name` 缺失 → **工具"没有名字"的静默失败**。P4-B4 的矩阵探针正是这么踩的，六个免费模型的 ③ 被误判成全失败。产品当前未踩到，只因 `LLMPlanner._format_tools` 两种格式都容忍 | 短期：在 `registry.to_llm_schemas()` 与 `chat_with_tools` 两处 docstring 写明形制差异（**已做**）+ 探针侧统一（`_flatten_schemas`）。长期：二选一并让类型来约束 |
+| **D17** | **`LLMPlanner._validated_steps` 只校验工具名、不校验参数类型** | 计划校验止于"工具名在表内" | LLM 产出的参数类型常错（实测：`pattern` 给列表、`file_move.source` 给列表、`targets` 又套了一层列表）。这类计划能"成功拆出来"，却必然在执行期被 `validate_params` 拦下 → 用户听到"这个指令我还没完全理解"。与 P4-B2 是同一族问题的**上游成因** | 在 `_validated_steps` 里按工具 schema 做一次轻量参数类型校验，类型不符则**丢弃该步**并记日志（而不是留着让它在执行期失败）。未在本轮实施 |
+
 ---
 
 ## 五、逐项验收标准（代码化，不写"应该没问题"）
@@ -192,6 +199,72 @@
 |---------|---------|
 | 基线量化 | `measure_asr_stimulus.py` 增加短句模式，把「算了/不用了/停止/确定」各合成 N 次并报命中率（当前「算了」2/4） |
 | 改善或如实登记 | 若 ASR 侧无改善空间，则在**管线侧**加"没听清就再问一次"的兜底；两者都做不到就写清"缺什么" |
+
+### P4-B4 执行实录：免费端点到底能不能当测试载体（§五点五）
+
+> **背景**：两个 key 早先被打印进对话。用户指示**先不轮换**，
+> 改为"用之前找到的免费模型 API 做测试"。于是本轮把"哪些免费端点现在真的能用、
+> 能干什么活"变成一次可复跑的事实，而不是照抄文档。
+>
+> 全部原始输出：`docs/agent/evidence/p4/free_llm_probe.txt`；
+> 机器可读结论：`docs/agent/evidence/p4/free_llm_matrix.json`。
+
+#### 一、结论表（2026-09-11 实测）
+
+| 端点 | 能否作测试载体 | 实测证据 |
+|------|---------------|---------|
+| **本地 Ollama** `qwen2.5:1.5b`（0.92GB） | 🟡 **只够测 ①闲聊** —— 但它是**唯一零配额、可复跑**的 | ①通过（冷 3296ms／热 2351ms）；②拆不出计划；③**没有 `chat_with_tools`** |
+| **Groq 免费档**（当前主端点 `openai/gpt-oss-120b`） | ❌ **当天不可用** | 模型在架，但**每日** token 上限打满：`Limit 200000 (TPD), Used 199432`。注意是 **TPD 不是 TPM** —— 打满后**整天**不可用 |
+| **OpenRouter 免费模型**（`:free`，共 **22** 个在架） | 🟡 **③工具选择可用；②规划不可靠** | ③ `chat_with_tools` **3/3 通过**（`picked=system_info`）；②**0/9**（详见下节） |
+| **OVHcloud「匿名免费」** | ❌ **已不可用** | 4 个模型全部 `HTTP 403 Forbidden: authentication failed`。文档（3 天前记的）已过期 —— **免费文档是快照，只有真实请求算数** |
+
+#### 二、②多步规划为什么是 0/9（这条最容易被误读）
+
+| 观测 | 数字 |
+|------|------|
+| 三个免费模型各跑 3 次 | **0/9 成功** |
+| 失败性质 | 2 次 `planner` 20s 超时；7 次 `API 返回空回复`（HTTP 200 但 `content` 空） |
+| 429 次数 | **0**（所以**不是**配额问题） |
+| 反问：模型是不会，还是这次没成？ | **手动直接调 `llm.chat(prompt)` 成功过一次**：返回 503 字，`_validated_steps` 收到 **4 步全部合法**，链路 `file_search → file_search → file_move → file_delete` |
+
+**所以结论是"间歇性"，不是"不能"**。单次采样无法区分这两者 ——
+第一版矩阵探针就是只跑 1 次 ② 就报了 FAIL，差点写出"免费模型不会规划"的错误结论。
+
+> ⚠️ **顺带暴露一层新问题（未修，如实登记）**：即使拆出计划，**参数类型也常不对**。
+> 那次成功的原始输出里：`pattern: ["*.exe","*.msi"]`（该字段是 string）、
+> `source: "${s2.paths}"`（`file_move.source` 是 string，而占位符整值解析会保留列表）、
+> `targets: ["${s3.paths}"]`（把列表又套了一层）。
+> `LLMPlanner._validated_steps` 只校验**工具名**，不校验**参数类型**；
+> 于是这类计划会走到执行期才被 `validate_params` 拦下，用户听到的是
+> "这个指令我还没完全理解" —— 与 P4-B2 是同一类问题的上游成因。
+
+#### 三、本任务同时抓到的 3 处"探针自己出错"（与 §六 的 7 处同类）
+
+| # | 缺陷 | 后果 | 修法 |
+|---|------|------|------|
+| 1 | `probe_llm_capability._build_engine` 透传参数时**漏了 `model`** | 探针自称"用 config.yaml 的真实配置"，实际用的是插件默认模型 —— **它没在测它声称测的东西**（实测把 `openai/gpt-oss-120b` 换成了 `llama-3.1-8b-instant`） | 把 `model` 加进透传列表 |
+| 2 | 同文件在 `stack.dispose()`**之后**才调 `reg.names()` 比对工具名 | `dispose()` 卸载全部插件 → 注册表变空集 → **每一个合法工具名都被判"非法"**，稳定输出一条假 FAIL（`非法=['file_search','file_move','file_delete']`，而这三个都在 21 个工具里） | 在 `dispose()` **之前**把合法名快照下来 |
+| 3 | `probe_free_llm_matrix` 把 `registry.to_llm_schemas()`（**已包好**的 `{"type":"function","function":{…}}`）直接喂给 `chat_with_tools`（它**会再包一层**） | `function.name` 消失 → **六个免费模型的 ③ 全被判 FAIL**，全是假 FAIL | 新增 `_flatten_schemas()` 统一成扁平格式；修正后同样的模型 **3/3 通过** |
+
+第 3 处还牵出一个**真实存在的接口歧义（未修，登记为 D16）**：
+项目里同时有两种"llm schema"，**名字一样、形制不同** ——
+`LLMRouter.TOOL_SCHEMAS` 是**扁平**的，`ToolRegistry.to_llm_schemas()`
+（经 `BaseTool.to_llm_schema()`）是**已包好**的，而 `chat_with_tools` 期望扁平。
+`LLMPlanner._format_tools` 两种都容忍（所以产品当前**没有**因此出错），
+但任何新调用方把注册表的 schema 递进去都会得到"工具没有名字"的静默失败。
+
+#### 四、给"用什么测试"的落点建议
+
+| 目的 | 建议载体 | 理由 |
+|------|---------|------|
+| 门禁 / 回归（要可复跑） | **本地 Ollama**（或干脆用假 LLM 替身） | 零 key、零配额、结果确定。云端免费档的间歇性会让门禁随机变红 |
+| `chat_with_tools` 路径抽查 | **OpenRouter `:free`**（如 `nvidia/nemotron-3-super-120b-a12b:free`） | 实测 3/3 可用；成本为零 |
+| 多步规划路径抽查 | 只能"碰运气"或在验收里**记 SKIP** | 实测 0/9；项目已有的 `verify_f3_real_llm.py` 正是把 429/失败记 SKIP 而不是 FAIL，这个约定**继续适用** |
+| 端到端真实 LLM 验收 | **必须等配额**（Groq 每日重置）或换更高配额端点 | 主端点当天 TPD 打满，非代码可控 |
+
+> **不建议**把云端免费档任何一项写进"必须绿"的门禁 —— 那会让门禁的绿色
+> 取决于第三方当天的配额，而不是我们的代码。这正是 §七 把 G8 单列为
+> "外部依赖、计入跳过"的原因。
 
 ### P4-B2 执行实录：兜底为什么必须收窄（§五点六）
 

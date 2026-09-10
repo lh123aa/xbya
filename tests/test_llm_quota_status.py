@@ -103,3 +103,63 @@ class TestQuotaStats:
                            fallback_api_key="f" * 24,
                            fallback_base_url="http://b.invalid", fallback_model="fm")
         assert llm.quota_stats()["fallback_configured"] is True
+
+
+class TestStalePresetLists:
+    """内置"免费模型清单"是快照，会下架 —— 下架会伪装成"能用"（P4-B4）
+
+    实测过的事故：`PRESET_PROVIDERS["groq"]["free_models"][0]` 是
+    `llama-3.1-8b-instant`，而该模型在 Groq 早已 404。不显式传 `model` 时插件
+    就用它，于是**每次调用先失败、再降级到备用端点**：
+    回答来自备用模型，而 `get_model_info()` 报的是那个已下架的主模型名。
+    一次探针据此得出"llama-3.1-8b-instant 回话正常"的**假结论**。
+
+    这里钉住两件事：
+    1. 走预设默认模型时必须**打 WARNING**（不能再悄悄用）
+    2. 显式传 model 时**不得**打这个警告（否则告警会被噪音淹没）
+    """
+
+    def test_implicit_preset_model_warns(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING):
+            llm = UniversalLLM(api_key="k" * 24, provider="groq")
+        assert llm.model == "openai/gpt-oss-120b", "预设默认值（已核对为在架模型）"
+        assert llm._model_from_preset is True
+        text = caplog.text
+        assert "内置预设默认模型" in text
+        assert "可能已下架" in text
+        assert "probe_free_llm_matrix" in text, "必须指出核对办法"
+
+    def test_explicit_model_does_not_warn(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING):
+            llm = UniversalLLM(api_key="k" * 24, provider="groq",
+                               model="openai/gpt-oss-20b")
+        assert llm._model_from_preset is False
+        assert "内置预设默认模型" not in caplog.text
+
+    def test_no_provider_does_not_warn(self, caplog):
+        """非预设提供商没有清单可腐坏，不该打这个告警"""
+        import logging
+        with caplog.at_level(logging.WARNING):
+            UniversalLLM(api_key="k" * 24, base_url="http://x.invalid",
+                         model="m")
+        assert "内置预设默认模型" not in caplog.text
+
+    def test_preset_lists_have_no_known_dead_models(self):
+        """钉住这一轮**实测确认已下架**的名字不得回到清单里
+
+        这不是"联网校验"（测试不该依赖网络），而是把一次真实事故的结论
+        固化成回归：这三个 Groq 模型分别报 404 / 400 decommissioned，
+        `openai/gpt-oss-20b:free` 也已不在 OpenRouter 免费清单里。
+        """
+        from plugins.llm.openrouter.plugin import PRESET_PROVIDERS
+        dead = {
+            "llama-3.1-8b-instant",
+            "gemma2-9b-it",
+            "mixtral-8x7b-32768",
+            "openai/gpt-oss-20b:free",
+        }
+        for prov, info in PRESET_PROVIDERS.items():
+            overlap = dead & set(info["free_models"])
+            assert not overlap, f"{prov} 清单里混进了已下架模型: {overlap}"
