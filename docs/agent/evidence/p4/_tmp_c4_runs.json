@@ -1,0 +1,317 @@
+[
+ {
+  "engine": "baidu",
+  "run": 1,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1885.9,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.baidu.com/s?wd=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://wappass.baidu.com/static/captcha/tuxing_v2.html?&logid=10043954556684585079&ak=c27bbc89afca0463650ac9bde68ebe06&backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3D%25E4%25B8%258A%25E6%25B5%25B7%25E5%25A4%25A9%25E6%25B0%2594&ext=x9G9QDmMXq%2FNo87gjGO0P9hOAYaD2rG2AZtIc55gqUuRefc3eGtarOGqhes%2BYoPEUgqUK9LXd1cIlztrhMwiv3zIBc9sJh48U3uPFcvopVKq88vjYNjKcIXs1AYHPxXwaKPgzqnlzBjjAC9SFNO75g%3D%3D&signature=f67f3c5809328cafe7bdeb09e92b0c44&timestamp=1789082285",
+  "content_bytes": 1488,
+  "declared_encoding": "ISO-8859-1",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e0a",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 1438,
+  "markers": [
+   "百度安全验证",
+   "网络不给力",
+   "安全验证"
+  ],
+  "containers": [],
+  "parsed_by_project_parser": 0,
+  "parser_output": [],
+  "relevant": true,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html>\\n<html lang=\"zh-CN\">\\n<head>\\n    <meta charset=\"utf-8\">\\n    <title>百度安全验证</title>\\n    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\\n    <meta name=\"apple-mobile-web",
+  "title": "百度安全验证",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_baidu_run1.html",
+  "flags": {
+   "markers_found": [
+    "百度安全验证",
+    "网络不给力",
+    "安全验证"
+   ],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 21,
+   "visible_text_head": "网络不给力，请稍后重试 返回首页 问题反馈",
+   "js_gate": false,
+   "parser_bug": false,
+   "verdict": "不可为（反爬）"
+  }
+ },
+ {
+  "engine": "baidu",
+  "run": 2,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1693.6,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.baidu.com/s?wd=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://wappass.baidu.com/static/captcha/tuxing_v2.html?&logid=10076479540880168184&ak=c27bbc89afca0463650ac9bde68ebe06&backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3D%25E4%25B8%258A%25E6%25B5%25B7%25E5%25A4%25A9%25E6%25B0%2594&ext=x9G9QDmMXq%2FNo87gjGO0P9hOAYaD2rG2AZtIc55gqUtWkhrGqVqihBVl6ZY8QtPHUgqUK9LXd1cIlztrhMwiv%2FyKlcqKSUEvB22vcZFFanOq88vjYNjKcIXs1AYHPxXwpd%2Bf8BMeo6mlFDLWu4PVcQ%3D%3D&signature=9fa31c1e7dcc4ad2032d013acbb439ea&timestamp=1789082289",
+  "content_bytes": 1488,
+  "declared_encoding": "ISO-8859-1",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e0a",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 1438,
+  "markers": [
+   "百度安全验证",
+   "网络不给力",
+   "安全验证"
+  ],
+  "containers": [],
+  "parsed_by_project_parser": 0,
+  "parser_output": [],
+  "relevant": true,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html>\\n<html lang=\"zh-CN\">\\n<head>\\n    <meta charset=\"utf-8\">\\n    <title>百度安全验证</title>\\n    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\\n    <meta name=\"apple-mobile-web",
+  "title": "百度安全验证",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_baidu_run2.html",
+  "flags": {
+   "markers_found": [
+    "百度安全验证",
+    "网络不给力",
+    "安全验证"
+   ],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 21,
+   "visible_text_head": "网络不给力，请稍后重试 返回首页 问题反馈",
+   "js_gate": false,
+   "parser_bug": false,
+   "verdict": "不可为（反爬）"
+  }
+ },
+ {
+  "engine": "baidu",
+  "run": 3,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1658.9,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.baidu.com/s?wd=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://wappass.baidu.com/static/captcha/tuxing_v2.html?&logid=11349531599385182230&ak=c27bbc89afca0463650ac9bde68ebe06&backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3D%25E4%25B8%258A%25E6%25B5%25B7%25E5%25A4%25A9%25E6%25B0%2594&ext=x9G9QDmMXq%2FNo87gjGO0P2knoXLmEu8%2BbNKv7YSySBsmQTcmpWyo3%2FdfvHZy90eGUgqUK9LXd1cIlztrhMwiv%2FyKlcqKSUEvB22vcZFFanOq88vjYNjKcIXs1AYHPxXwpd%2Bf8BMeo6mlFDLWu4PVcQ%3D%3D&signature=7cab2d3a3ee701caa9b685e888788619&timestamp=1789082294",
+  "content_bytes": 1488,
+  "declared_encoding": "ISO-8859-1",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e0a",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 1438,
+  "markers": [
+   "百度安全验证",
+   "网络不给力",
+   "安全验证"
+  ],
+  "containers": [],
+  "parsed_by_project_parser": 0,
+  "parser_output": [],
+  "relevant": true,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html>\\n<html lang=\"zh-CN\">\\n<head>\\n    <meta charset=\"utf-8\">\\n    <title>百度安全验证</title>\\n    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\\n    <meta name=\"apple-mobile-web",
+  "title": "百度安全验证",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_baidu_run3.html",
+  "flags": {
+   "markers_found": [
+    "百度安全验证",
+    "网络不给力",
+    "安全验证"
+   ],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 21,
+   "visible_text_head": "网络不给力，请稍后重试 返回首页 问题反馈",
+   "js_gate": false,
+   "parser_bug": false,
+   "verdict": "不可为（反爬）"
+  }
+ },
+ {
+  "engine": "google",
+  "run": 1,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1617.6,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "content_bytes": 92317,
+  "declared_encoding": "UTF-8",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html; charset=UTF-8",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e3c",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 92231,
+  "markers": [],
+  "containers": [],
+  "parsed_by_project_parser": 1,
+  "parser_output": [
+   {
+    "title": "反馈",
+    "url": "https://support.google.com/websearch"
+   }
+  ],
+  "relevant": false,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html><html lang=\"zh-CN\"><head><title>Google Search</title><style>body{background-color:var(--xhUGwc)}</style><script nonce=\"6eHxjjogo5O5vsBtFodRKg\">window.google = window.google || {};window",
+  "title": "Google Search",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_google_run1.html",
+  "flags": {
+   "markers_found": [],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 58,
+   "visible_text_head": "如果您在几秒钟内没有被重定向，请点击 此处 。 如果您无法访问 Google 搜索，请 点击此处 ，或发送 反馈 。",
+   "js_gate": true,
+   "parser_bug": false,
+   "verdict": "不可为（反爬-需执行 JS 的空壳页）"
+  }
+ },
+ {
+  "engine": "google",
+  "run": 2,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1576.0,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "content_bytes": 92594,
+  "declared_encoding": "UTF-8",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html; charset=UTF-8",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e3c",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 92508,
+  "markers": [],
+  "containers": [],
+  "parsed_by_project_parser": 1,
+  "parser_output": [
+   {
+    "title": "反馈",
+    "url": "https://support.google.com/websearch"
+   }
+  ],
+  "relevant": false,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html><html lang=\"zh-CN\"><head><title>Google Search</title><style>body{background-color:var(--xhUGwc)}</style><script nonce=\"O3zMpQZNnz1G9drTGs9FbA\">window.google = window.google || {};window",
+  "title": "Google Search",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_google_run2.html",
+  "flags": {
+   "markers_found": [],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 58,
+   "visible_text_head": "如果您在几秒钟内没有被重定向，请点击 此处 。 如果您无法访问 Google 搜索，请 点击此处 ，或发送 反馈 。",
+   "js_gate": true,
+   "parser_bug": false,
+   "verdict": "不可为（反爬-需执行 JS 的空壳页）"
+  }
+ },
+ {
+  "engine": "google",
+  "run": 3,
+  "query": "上海天气",
+  "http_error": "",
+  "elapsed_ms": 1620.4,
+  "tool_success": true,
+  "tool_summary": "「上海天气」没搜到结果呢",
+  "tool_count": 0,
+  "tool_results": [],
+  "url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "status": 200,
+  "reason": "OK",
+  "final_url": "https://www.google.com/search?q=%E4%B8%8A%E6%B5%B7%E5%A4%A9%E6%B0%94",
+  "content_bytes": 92413,
+  "declared_encoding": "UTF-8",
+  "apparent_encoding": "utf-8",
+  "content_type": "text/html; charset=UTF-8",
+  "raw_head_hex": "3c21444f43545950452068746d6c3e3c",
+  "request_headers": {
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+  },
+  "request_timeout": 12,
+  "chars": 92327,
+  "markers": [],
+  "containers": [],
+  "parsed_by_project_parser": 1,
+  "parser_output": [
+   {
+    "title": "反馈",
+    "url": "https://support.google.com/websearch"
+   }
+  ],
+  "relevant": false,
+  "marker_evidence": [],
+  "head200": "<!DOCTYPE html><html lang=\"zh-CN\"><head><title>Google Search</title><style>body{background-color:var(--xhUGwc)}</style><script nonce=\"dgziH4K0t-a-B3hK9Yf-ig\">window.google = window.google || {};window",
+  "title": "Google Search",
+  "raw_dump": "E:\\程序\\桌面宠物\\xiaoyi-vrm-worktree\\docs\\agent\\evidence\\p4\\_tmp_c4_raw_google_run3.html",
+  "flags": {
+   "markers_found": [],
+   "container_markers_found": [],
+   "has_result_container": false,
+   "has_results": false,
+   "visible_text_chars": 58,
+   "visible_text_head": "如果您在几秒钟内没有被重定向，请点击 此处 。 如果您无法访问 Google 搜索，请 点击此处 ，或发送 反馈 。",
+   "js_gate": true,
+   "parser_bug": false,
+   "verdict": "不可为（反爬-需执行 JS 的空壳页）"
+  }
+ }
+]

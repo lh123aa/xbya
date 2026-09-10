@@ -1,0 +1,9 @@
+﻿We have verified the 1488-byte reply is byte-identical three times:
+（三次百度响应逐字节相同 → 同一份 md5；谷歌因 nonce 随机而三次不同）
+403AF8943549C35B1B5915C502E4BC9A  _tmp_c4_raw_baidu_run1.html  bytes=1488
+403AF8943549C35B1B5915C502E4BC9A  _tmp_c4_raw_baidu_run2.html  bytes=1488
+403AF8943549C35B1B5915C502E4BC9A  _tmp_c4_raw_baidu_run3.html  bytes=1488
+4EA37C09735515788D80C31C4CAC7697  _tmp_c4_raw_bing_run1.html  bytes=120715
+7C31B0C7DCCF1A726F94708383FB9DB3  _tmp_c4_raw_google_run1.html  bytes=92317
+2207046F45AA11A8A130AA0168F9D4C2  _tmp_c4_raw_google_run2.html  bytes=92594
+164885D643172B1AD1CD772BACB4BACA  _tmp_c4_raw_google_run3.html  bytes=92413
