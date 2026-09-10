@@ -19,20 +19,20 @@
   "p2": ["P4-C1", "P4-C2", "P4-C3", "P4-C4", "P4-C5"],
   "estimated_hours": 13.0,
   "status": {
-    "P4-A1": "pending",
+    "P4-A1": "done",
     "P4-A2": "pending",
     "P4-A3": "pending",
     "P4-B1": "pending",
     "P4-B2": "pending",
     "P4-B3": "pending",
-    "P4-B4": "pending",
+    "P4-B4": "partially_done",
     "P4-B5": "pending",
     "P4-C1": "pending",
     "P4-C2": "pending",
     "P4-C3": "pending",
     "P4-C4": "pending",
     "P4-C5": "pending",
-    "note": "P4 立项完成，尚未开始执行。P0 三项全部为「未做」：无版本控制、提醒不持久化、人工验收未执行。"
+    "note": "P4-A1 完成（2026-09-11）：重建仓库 main 分支，4 个提交；.gitignore 补 models/（85MB ckpt）、data/ 整目录、.coverage；新增 tools/check_repo_hygiene.py 并接入为验收关卡 G13（内部关卡 6→7）；新增 tools/make_config_example.py 修复过期模板（顶层缺整个 agent: 段）；13 关验收内部 7/7、外部 6/6，G8 本次 20/20 无跳过；仓库卫生自检 17/17。P4-B4 的扫描器部分由 A1 提前交付（G13 已含密钥扫描），剩余为用户轮换 key。"
   },
   "tasks": [
     {
