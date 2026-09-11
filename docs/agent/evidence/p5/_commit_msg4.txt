@@ -1,0 +1,65 @@
+P5-B1：工具 schema 形制归一（D16 已偿还）+ 反方向验证
+
+一、问题（D16 登记的坑，这次连根拔掉）
+
+  项目里同时存在两种都叫「llm schema」的东西：
+    · LLMRouter.TOOL_SCHEMAS            → 扁平 {name, description, parameters}
+    · ToolRegistry.to_llm_schemas()     → 已包好 {"type":"function","function":{…}}
+  两个 LLM 插件原先都写 `[{"type": "function", "function": t} for t in tools]`，
+  于是把注册表 schema 递进 chat_with_tools 会得到**两层套娃**：
+
+      {"type":"function","function":{"type":"function","function":{...}}}
+
+  ⇒ 请求体里**根本没有 function.name** → 端点 400 / 空 tool_calls →
+  插件返回 None → core/app.py::route_with_tools 把 None 读成「模型这次用文字回答」
+  ⇒ **整条 LLM 路由兜底静默失效**，日志里只剩一个状态码。
+
+  P4-B4 的免费模型矩阵探针正是这么踩的：**六个免费模型的第 ③ 项被这个形制问题
+  误判成「全都不支持 function calling」** —— 结论错在测量侧，不在模型侧。
+
+二、修法：一个收敛点，不是两个补丁
+
+  新增 plugins/llm/tool_schemas.py（唯一收敛点），openai_api 与 openrouter
+  **两个插件都 import 它**：
+
+  ① **两种形制都收** —— 剥掉多余层（连包两层也剥），不靠巧合让 function.name 恰好存在；
+  ② **畸形显式报错**（ToolSchemaError，继承 ValueError）—— 缺名字 / 空名字 /
+     两层名字冲突 / 形制混用 **一律整批拒绝**，绝不静默变出「没有名字的工具」。
+     空名字正是静默失败的载体：请求照样发、端点照样 400、上层照样只看得到 None；
+  ③ **形制错误必须穿透宽口 except** —— 两个插件的 chat_with_tools / _tools_once
+     都有 `except Exception`，吃掉它等于把修复抹回原样。都加了
+     `except ToolSchemaError: raise`；
+  ④ core/app.py::route_with_tools 单独 `except ToolSchemaError`，按 **ERROR** 级
+     点名 D16 记日志 —— 这条路径以前没有任何办法把「接错」与「模型没选工具」分开。
+
+三、守护用例 tests/test_tool_schema_shape.py（26 项）
+
+  · 两种形制 / 混用 / 双层套娃 / 空列表 的**正方向**；
+  · 七类畸形输入的**反方向**（含「批内一条坏 → 整批拒绝」）；
+  · **真注册表 schema** 直接喂进来必须被收下（就是 P4-B4 踩的那个场景）；
+  · **抓真实出网报文**：断言发出去的 `tools[0].function.name` 真的是名字、
+    且 function 里没有再嵌一层 —— 归一函数再对，插件忘了调用它，事故照样发生，
+    而「忘了调用」在行为上测不出来，只能看报文；
+  · 源码文本断言：插件里不许再留手写的 `"function": t for t`（那种写法在输入恰好
+    是扁平时**能跑**，所以行为测试抓不住它）。
+
+四、反方向验证（本项目的硬要求：新守卫必须证明自己不是空转）
+
+  docs/agent/evidence/p5/_tmp_b1_reverse_check.py 做三件事并把原文留档：
+    ① 把两个插件改回原始写法 → 守卫**变红**（exit 1）；
+    ② 拿掉 `except ToolSchemaError: raise` → 守卫**变红**（exit 1）；
+    ③ try/finally 复原 → 复跑全绿（exit 0）。
+  第一版测试还踩了一个坑：两个插件都是「调用点才 import requests」（openrouter
+  在函数体内 import），我原先打的是模块属性 → **补丁打上了但没生效**，
+  测试于是变成空转。改成打全局 requests.post 才真的抓到报文。
+
+五、门禁
+
+  · G1 语法：通过
+  · G2 全量回归：2694 passed / 1 skipped / 0 failed（新增 26 项用例）
+  · G3 覆盖率：口径内 7238 语句 0 未覆盖 100%（plugins/ 不在口径内）
+  · 端到端：P1 18/18、P3 44/44、指标 8/8
+  · G13：提交前 19/20（工作区不干净，正确判据）→ 提交后 20/20
+  · 完成度表的数字改为**从 g2_g3 证据文件里读**（脚本
+    _tmp_sync_completion_numbers.py）—— 手抄的数字已经过期过一次
+    （2668 → 实际 2694），而手抄数字与证据分离后没有任何机制会发现对不上

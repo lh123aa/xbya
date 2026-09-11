@@ -17,6 +17,7 @@ import logging
 from typing import Optional, Dict, Any, List
 
 from interfaces.llm import LLMEngine
+from plugins.llm.tool_schemas import ToolSchemaError, to_openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -120,11 +121,17 @@ class OpenAIApiLLM(LLMEngine):
         Args:
             system: 系统提示
             user: 用户输入
-            tools: 工具 schema 列表（Agent 层的 TOOL_SCHEMAS 格式）
+            tools: 工具 schema 列表。**扁平与"已包好"两种形制都收**
+                （D16：`LLMRouter.TOOL_SCHEMAS` 是扁平的，
+                `ToolRegistry.to_llm_schemas()` 是已包好的）；
+                畸形条目由 `to_openai_tools` 显式拒绝，不再静默产生匿名工具
             timeout: 覆盖默认超时（秒）
 
         Returns:
             {"name": 工具名, "arguments": {...}}；失败返回 None
+
+        Raises:
+            ToolSchemaError: `tools` 形制不合法（**显式报错，不静默降级**）
         """
         if not self._available:
             return None
@@ -132,13 +139,14 @@ class OpenAIApiLLM(LLMEngine):
             return None
 
         try:
+            payload_tools = to_openai_tools(tools)
             payload = {
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system or ""},
                     {"role": "user", "content": user or ""},
                 ],
-                "tools": [{"type": "function", "function": t} for t in tools],
+                "tools": payload_tools,
                 "tool_choice": "auto",
                 "stream": False,
             }
@@ -175,6 +183,12 @@ class OpenAIApiLLM(LLMEngine):
                     args = {}
 
             return {"name": name, "arguments": args or {}}
+        except ToolSchemaError:
+            # **不能让下面那个 `except Exception` 把形制错误吃掉**。
+            # 吃掉的后果与 D16 原始事故完全一样：调用方只看到 `None`，
+            # 而 `None` 在 `route_with_tools` 那里等于"模型这次用文字回答"。
+            # 形制错误是**编程错误**，必须原样上抛（core/app.py 会点名记 ERROR）。
+            raise
         except Exception as e:
             logger.warning(f"云端LLM tools 请求异常: {e}")
             return None

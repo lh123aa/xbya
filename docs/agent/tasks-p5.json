@@ -72,13 +72,15 @@
       "id": "P5-B1",
       "priority": "P1",
       "title": "D16 守护：把注册表 schema 直接喂给 chat_with_tools 必须显式拒绝或自动纠正",
-      "state": "pending",
+      "state": "fixed",
       "acceptance": [
         "不得静默产生无名工具",
         "两种形制要么统一、要么由类型/断言约束"
       ],
-      "planned_evidence": [
-        "docs/agent/evidence/p5/d16_schema_shape.txt"
+      "evidence": [
+        "docs/agent/evidence/p5/d16_schema_shape.txt",
+        "plugins/llm/tool_schemas.py",
+        "tests/test_tool_schema_shape.py"
       ]
     },
     {

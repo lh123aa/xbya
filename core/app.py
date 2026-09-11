@@ -20,6 +20,7 @@ from core.hardware_detector import get_hardware_detector, HardwareDetector
 from core.event_bus import get_event_bus, EventBus, EventType
 from core.temp_manager import get_tmp_dir, TmpCleaner
 from services.hotkey_manager import HotkeyManager
+from plugins.llm.tool_schemas import ToolSchemaError
 
 logger = logging.getLogger(__name__)
 
@@ -466,6 +467,18 @@ class XiaoyiApp:
             return None
         try:
             return llm.chat_with_tools(system, user, tools)
+        except ToolSchemaError as e:
+            # 形制接错（D16）**不再算"这次模型没选工具"** —— 以前它会退化成一个
+            # 状态码，而这条路径的失败表现恰好与"模型用文字回答"一模一样。
+            # 单独点名 + ERROR 级，是为了让"接错"在日志里可被一眼认出。
+            logger.error(
+                "[app] 传给 chat_with_tools 的工具 schema 形制不合法（D16）：%s\n"
+                "      ⇒ 请检查调用方传的是 LLMRouter.TOOL_SCHEMAS（扁平）还是\n"
+                "        ToolRegistry.to_llm_schemas()（已包好）—— 两种都该被 "
+                "plugins/llm/tool_schemas.py 归一，不该在这里报错",
+                e,
+            )
+            return None
         except Exception as e:
             logger.warning("LLM 路由调用失败: %s", e)
             return None

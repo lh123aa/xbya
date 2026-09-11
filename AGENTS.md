@@ -301,7 +301,7 @@ class RuleRouter(RouterService):
 | ~~D13~~ | ~~提醒不持久化~~ | — | — | ✅ **已偿还（P4-A2）**：新增 `agent/reminder_store.py`（原子写 / 逐条校验 / 条数上限 / 失败降级为纯内存 / 不落用户数据区）+ `agent/store_guard.py`（把原先在 `tracker_store` 与 `recall_store` 各写一遍的安全守卫抽成唯一事实来源）；`ReminderTool` 接 `store`，`execute`/`cancel`/`due_now` 后落盘、启动时 `restore()`，且**恢复早于调度器启动**（有用例钉住顺序）。`tools/verify_f7_real_services.py` 新增 F7-e：**三个独立进程** add/list/clear 真实验证"重启不丢"（F7 断言 27 → 32） |
 | D14 | **两个不兼容的 EventBus 并存** | `core/event_bus.py`（枚举 + `subscribe/emit(EventType, dict)`，handler 约定未验证）与 `core/kernel/events.py`（字符串 + `on/off/emit(str, source="", **data)`，handler 收**一个 `Event` 位置参数**）同名不同契约 | 极易再次接错 —— 本轮修掉的第一个缺陷就是"把前者传给了只认后者的 Agent 层"，代价是 Agent 层**自 P0 起在真实应用里全程静默降级**，而所有脚本级验收都测不出来 | ⬜ **终态：守护已交付 + 适配层明确不做（P5-A3，2026-09-11）**。① 守护已交付（P4-B1）：`agent/bootstrap.py::assert_kernel_bus` 接在 `build_agent_stack()` 第 0 步，契约不符立刻 `TypeError` 并点名两个类；`tests/agent/test_eventbus_contract.py` 12 项双向覆盖；`core/app.py::_setup_agent_layer` 用的就是内核总线，`tests/test_app.py:229` 断言 `app.agent_bus` 是内核总线类型 —— **契约一致这一条已经成立**。② **适配层不做**，3 条理由：（a）旧总线在 Agent 层路径上**已经没有使用者**，统一它属于**架构重构**而非闭环必需项；（b）`p4-plan.md` §六 把"是否接受该改动面"列为**人工决定**，用户已选择保留守护；（c）收益（消除一个不再被误用的类）< 风险（它会碰受 G12 保护的语音路径）。⚠️ **注意措辞边界**：这不等于"两个总线已统一"—— **旧类 `core.event_bus.EventBus` 仍然存在，并且仍然在服务语音层**，只是 Agent 层不再用它、且接错会立刻报错 |
 | ~~D15~~ | ~~仓库无版本控制~~ | — | — | ✅ **已偿还（P4-A1）**：悬空 `.git` 指针文件 → `git init -b main`，7 个提交；`.gitignore` 补 `models/`（85MB ckpt）、`data/` 整目录、`.coverage`；新增 `tools/check_repo_hygiene.py` 并接入为**验收关卡 G13**（内部关卡 6 → 7）——它专门防"再次失去版本控制""运行时数据库混进历史""密钥被写进 git 历史" |
-| **D16** | **两种"llm schema"同名不同形制** | `LLMRouter.TOOL_SCHEMAS` 是**扁平** `{name,description,parameters}`；`ToolRegistry.to_llm_schemas()`（经 `BaseTool.to_llm_schema()`）返回**已包好**的 `{"type":"function","function":{…}}`；而 `UniversalLLM.chat_with_tools` 期望扁平（它自己会再包一层） | 与 D14 同族：把注册表 schema 递给 `chat_with_tools` → `function.name` 缺失 → **工具"没有名字"的静默失败**。P4-B4 的矩阵探针正是这么踩的（六个免费模型的 ③ 被误判成全失败）。产品当前未踩到，只因 `LLMPlanner._format_tools` 两种格式都容忍 | 短期：两处 docstring 写明形制差异 + 探针侧 `_flatten_schemas()`（**已做**）。长期：二选一，让类型来约束 |
+| **D16** | **两种"llm schema"同名不同形制** | `LLMRouter.TOOL_SCHEMAS` 是**扁平** `{name,description,parameters}`；`ToolRegistry.to_llm_schemas()`（经 `BaseTool.to_llm_schema()`）返回**已包好**的 `{"type":"function","function":{…}}`；而 `chat_with_tools` 原先无条件再包一层 | 与 D14 同族：把注册表 schema 递给 `chat_with_tools` → 请求体里**根本没有 `function.name`** → 端点 400/空 tool_calls → 插件返回 `None` → `route_with_tools` 把 `None` 读成"模型这次用文字回答" ⇒ **整条 LLM 路由兜底静默失效**。P4-B4 的矩阵探针正是这么踩的（**六个免费模型的第 ③ 项被误判成"全都不支持 function calling"** —— 错在测量侧） | ✅ **已偿还（P5-B1，2026-09-11）**：新增唯一收敛点 **`plugins/llm/tool_schemas.py`**，`openai_api` 与 `openrouter` **两个插件都走它**。① **两种形制都收**（剥掉多余层，不靠巧合让 `function.name` 恰好存在）；② **畸形显式报错**（`ToolSchemaError`，继承 `ValueError`）—— 缺名字/空名字/两层名字冲突/形制混用**一律整批拒绝**，绝不静默变出"没有名字的工具"（空名字正是静默失败的载体）；③ **形制错误必须穿透宽口 `except Exception`**（两个插件都加了 `except ToolSchemaError: raise`，否则它退化成 `return None`，接错又变回静默失效）；④ `core/app.py::route_with_tools` 单独 `except ToolSchemaError` 按 **ERROR** 级点名 D16。守护用例 `tests/test_tool_schema_shape.py` **26 项**，含**抓真实出网报文**（断言 `function.name` 真的是名字、且没有再嵌一层）。**反方向验证过不是空转**：把原始写法塞回去 → 守卫变红；拿掉 `except ToolSchemaError: raise` → 守卫变红（两次都留档 `evidence/p5/d16_schema_shape.txt`） |
 | **D17** | **`LLMPlanner._validated_steps` 只校验工具名、不校验参数类型** | 计划校验止于"工具名在表内" | LLM 产出的参数类型常错（实测 `pattern` 给列表、`file_move.source` 给列表）。这类计划能"成功拆出来"，却必然在执行期被 `validate_params` 拦下 → 用户听到"这个指令我还没完全理解"。与 P4-B2 同族的**上游成因** | ✅ **已偿还（P5-A2，2026-09-11）**：判据抽成模块级 `agent/tools/base.py::describe_value_problem`，`BaseTool.validate_params` 与 `LLMPlanner._validated_steps` **共用同一份**（不另写第二份 —— 本项目吃过"复刻判据"的亏）。规划期现在查三类：①工具名在表内 ②参数类型合工具真实 schema ③`${sN}` 引用**不指向被丢弃/不存在的步骤**。不符则丢该步 + `WARNING` 说明"哪个参数、期望什么、收到什么"。取向与执行期一致：**未声明字段放行**、**显式 `None` 视为未提供**（F 系列缺陷 4 回归保护）；畸形 schema（`spec` 不是 dict）一律放行 —— 不确定时不假装能判。证据 `docs/agent/evidence/p5/d17_plan_param_validation.txt` |
 | **D18** | **`file_delete` 把 `targets` 里的非字符串项 `str()` 之后照删** | `_collect_targets` 原写 `[str(t) for t in explicit if t]` | `targets=[["C:\\a.txt"]]` → 字符串 `"['C:\\\\a.txt']"` —— 一个**看起来像列表的路径**。危险不在"通常会删不到"（那种假路径落在白名单外，用户听到的是「删除失败了，可能是权限不够呢」，**真正原因永不出现**，排查被引到权限上），而在"**位置决定后果**"：若 `str(t)` 恰好拼出一个白名单内且真实存在的名字，它就会安静地删掉那个文件 | ✅ **已修（P5-A2 顺带，2026-09-11）**：逐项必须是 `str`，否则整条拒绝并说明**真正的原因是输入畸形**。`preview`/`execute` 结论一致（都拒绝）；空串/`None` 这类"空项"仍按缺省处理（只收紧非字符串，没顺手改空值语义）。5 个参数化用例 + 2 条反方向 + 1 条"错误里不许出现「权限」"。证据 `docs/agent/evidence/p5/d18_items_probe.txt`（含**沙箱内真实探查**：三种畸形输入各自 `validate_params`/`preview`/`_collect_targets` 的原文输出） |
 
@@ -334,7 +334,8 @@ class RuleRouter(RouterService):
 | P5-A3 | D14 适配层终态登记（明确不做 + 3 条理由） | ✅ 完成 | 债务表 D14 行 |
 | P5-AUDIT | G13 证据检查改为自动发现 `tasks*.json`（原写死四个文件名 ⇒ 新阶段悄悄不查） | ✅ 完成 | `evidence/p5/g13_hygiene.txt`（18 项 → 20 项） |
 | P5-AUDIT-CLOSURE | 收口审计：逐条列终态 + 证据是否存在 + 非终态措辞扫描 + 关卡原样复跑 | ✅ 完成 | `evidence/p5/closure_audit.txt`（**可复跑**） |
-| P5-B1~B5 | D16 守护 / voice_service 传参 / ST+vec0 / medium 长句 / SERP fixture | ⏳ **未到终态 —— 闭环缺口，尚未做完** | 计划路径见 `tasks-p5.json` 的 `planned_evidence` |
+| P5-B1 | D16 工具 schema 形制归一（收敛点 + 显式拒绝匿名工具） | ✅ 完成 | `evidence/p5/d16_schema_shape.txt`（26 项守卫 + **反方向验证**） |
+| P5-B2~B5 | voice_service 传参 / ST+vec0 / medium 长句 / SERP fixture | ⏳ **未到终态 —— 闭环缺口，尚未做完** | 计划路径见 `tasks-p5.json` 的 `planned_evidence` |
 | P5-C1~C2 | 轮换 key / 人工验收 M1~M5 | 🟡 待人工 | 见 §六 末"能力边界" |
 | P5-C3~C8 | 6 项明确不做（D3 / 天气 IP / D7 / 繁简边界 / 诱饵页 / 历史账本） | ⬜ 已登记 | 各附可反驳理由 |
 
@@ -862,25 +863,25 @@ P3 期间新增全量运行样本（本轮共 **6 轮** `pytest tests/`，含 §
 | 验收关卡（内部） | G1~G7 + G13 = **7 关** | **7 / 7** | 每关都有原始输出 |
 | 验收关卡（外部依赖） | G8~G12 = **6 关** | **6 / 6 退出码 0** | ⚠️ G8 依赖免费配额，**有跳过项时按设计不算通过**，报告里单独标出 |
 | P5 登记项 | **18 项** | 见下表 | 闭环判据不是"做完"，而是"每项都有终态" |
-| 测试用例 | 全量 `pytest tests` | **2668 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败" |
+| 测试用例 | 全量 `pytest tests` | **2694 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败" |
 
 **P5 登记项逐条终态**（四种终态，没有第五种；机器可读的账本在 `tasks-p5.json`）：
 
 | 终态 | 项数 | 具体 |
 |------|------|------|
-| ✅ 已修 | 2 | P5-A2（D17 + 顺带 D18）、P5-AUDIT（G13 清单改自动发现） |
+| ✅ 已修 | 3 | P5-A2（D17 + 顺带 D18）、P5-AUDIT（G13 清单改自动发现）、P5-B1（D16 形制归一） |
 | ✅ 已完成 | 3 | P5-A1（账本刷新 + 完成度）、P5-A3（D14 终态登记）、P5-AUDIT-CLOSURE（收口审计） |
 | ⬜ 明确不做 | 6 | P5-C3 D3 / C4 天气 IP / C5 D7 / C6 繁简边界 / C7 诱饵页 / C8 历史账本 |
 | 🟡 待人工 | 2 | P5-C1 轮换 key、P5-C2 麦克风+GUI+人耳验收（各附最小操作路径与判据） |
-| ⏳ 未到终态（**闭环缺口**） | 5 | P5-B1 D16 守护 / B2 voice_service 传参 / B3 ST+vec0 / B4 medium 长句 / B5 SERP fixture |
+| ⏳ 未到终态（**闭环缺口**） | 4 | P5-B2 voice_service 传参 / B3 ST+vec0 / B4 medium 长句 / B5 SERP fixture |
 
 > **上表的数字是审计脚本数出来的，不是我数出来的**：`evidence/p5/closure_audit.txt`
 > 由 `_tmp_closure_audit.py` 生成，逐条列终态、逐条核对证据文件是否存在。
 > 它一跑就照出过一次账本与现实不一致（`AGENTS.md` 写着完成、`tasks-p5.json` 还是
 > `pending`）—— 机器只读后者，这正是"文档说做完了"与"账本记着做完了"的区别。
 
-**为什么 B1~B5 算不出百分比**：它们**是闭环缺口，不是"可选项"** —— 计划里它们是
-"有代码可改 / 从未实测"的已登记项。**闭环尚未宣告**，因为还有 5 项没做完。
+**为什么剩下的算不出百分比**：它们**是闭环缺口，不是"可选项"** —— 计划里它们是
+"有代码可改 / 从未实测"的已登记项。**闭环尚未宣告**，因为还有 4 项没做完。
 把它们写成"可选增强"等于**用措辞把欠的活儿抹掉**，已改回。
 （这条更正本身也是本轮审计的产物：审计脚本读 `tasks-p5.json` 的 `state` 字段，
 而措辞写在 `AGENTS.md` 里 —— **两个地方不一致时，机器只信前者**。）

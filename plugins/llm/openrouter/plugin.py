@@ -17,6 +17,7 @@ import time
 from typing import Optional, List, Dict, Any
 
 from interfaces.llm import LLMEngine
+from plugins.llm.tool_schemas import ToolSchemaError, to_openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -336,12 +337,18 @@ class UniversalLLM(LLMEngine):
         Args:
             system: 系统提示
             user: 用户输入
-            tools: 工具 schema 列表（Agent 层 TOOL_SCHEMAS 格式）
+            tools: 工具 schema 列表。**扁平与"已包好"两种形制都收**
+                （D16：`LLMRouter.TOOL_SCHEMAS` 是扁平的，
+                `ToolRegistry.to_llm_schemas()` 是已包好的）；畸形条目由
+                `to_openai_tools` 显式拒绝，不再静默产生匿名工具
             timeout: 覆盖默认超时（秒）；调用方（LLMRouter）不传，此处给 12s
                      兜住"提示词里带 21 个工具 schema"时更长的往返
 
         Returns:
             {"name": 工具名, "arguments": {...}}；未选工具或失败时返回 None
+
+        Raises:
+            ToolSchemaError: `tools` 形制不合法（**显式报错，不静默降级**）
         """
         if not self._available:
             logger.error("LLM 不可用")
@@ -349,7 +356,10 @@ class UniversalLLM(LLMEngine):
         if not tools:
             return None
 
-        payload_tools = [{"type": "function", "function": t} for t in tools]
+        # 形制归一放在**发请求之前**：匿名工具（没有 function.name）发出去只会
+        # 换来 400 或空 tool_calls，而上层看到的是"模型没选工具" —— 与 D14 同类的
+        # 静默失效。这里直接抛 ToolSchemaError，让接错在调用点就现形。
+        payload_tools = to_openai_tools(tools)
         timeout = timeout or 12
 
         ok, picked = self._tools_once(
@@ -438,6 +448,11 @@ class UniversalLLM(LLMEngine):
 
             return True, {"name": name, "arguments": args or {}}
 
+        except ToolSchemaError:
+            # 形制错误**必须穿透**这个宽口 `except Exception`（D16 修复的实质）：
+            # 被吃掉就退化成 `(False, None)` → 重试备用端点 → 照样失败 →
+            # 上层只看到 `None`，与"模型本轮没选工具"无法区分。
+            raise
         except Exception as e:
             logger.warning(f"tools 请求异常: {e}")
             return False, None

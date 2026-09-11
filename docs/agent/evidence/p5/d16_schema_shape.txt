@@ -1,0 +1,66 @@
+# P5-B1 / D16 证据：工具 schema 形制归一 + 反向验证
+
+生成时间：2026-09-11 10:00:04
+
+## 一、正向：修复后的守卫用例
+
+```
+$ pytest tests/test_tool_schema_shape.py -q
+26 passed, 1 warning in 0.58s
+[exit] 0
+```
+
+## 二、反向：把原始写法塞回去，守卫**必须**变红
+
+本项目吃过三次「检查在空转」的亏，所以每条新守卫都要用**反方向输入**验一遍：
+永远通过的守卫与真的在守的守卫，在报告里长得一模一样。
+
+### 反向 1：插件改回 `[{"type": "function", "function": t} for t in tools]`
+
+```
+$ pytest tests/test_tool_schema_shape.py -q   # 已把两个插件改回原始写法
+FAILED tests/test_tool_schema_shape.py::TestOutgoingPayloadHasRealNames::test_openai_api_sends_named_tools
+FAILED tests/test_tool_schema_shape.py::TestOutgoingPayloadHasRealNames::test_openrouter_sends_named_tools
+FAILED tests/test_tool_schema_shape.py::TestOutgoingPayloadHasRealNames::test_plugin_raises_on_malformed_instead_of_sending_anonymous
+3 failed, 23 passed, 1 warning in 0.69s
+[exit] 1
+```
+
+- 结论：**✅ 守卫确实变红了（不是空转）**
+
+### 反向 2：拿掉 `except ToolSchemaError: raise`
+
+这一条守的是「形制错误必须穿透宽口 `except Exception`」——
+被吃掉就退化成 `return None` / `(False, None)`，而上层把 `None` 读成
+「模型本轮用文字回答」，于是**接错又变回静默失效**。
+
+```
+$ pytest tests/test_tool_schema_shape.py -q   # 已拿掉 except ToolSchemaError: raise
+FAILED tests/test_tool_schema_shape.py::TestOutgoingPayloadHasRealNames::test_plugin_raises_on_malformed_instead_of_sending_anonymous
+1 failed, 25 passed, 1 warning in 0.68s
+[exit] 1
+```
+
+- 结论：**✅ 守卫变红（这一条也在真的守）**
+
+## 三、恢复后复跑（确认原文件已复原）
+
+```
+$ pytest tests/test_tool_schema_shape.py -q
+26 passed, 1 warning in 0.67s
+[exit] 0
+```
+
+- 结论：✅ 已复原并全绿
+
+## 四、git 层面的复原核对
+
+```
+$ git diff --stat -- plugins/llm/openai_api/plugin.py plugins/llm/openrouter/plugin.py
+plugins/llm/openai_api/plugin.py | 18 ++++++++++++++++--
+ plugins/llm/openrouter/plugin.py | 19 +++++++++++++++++--
+ 2 files changed, 33 insertions(+), 4 deletions(-)
+```
+
+> 这里的差异应当是**本轮修复带来的那几行**（引入 to_openai_tools / 新增 except 分支），
+> 不应包含反向验证留下的痕迹 —— 脚本用 try/finally 复原，且第三步复跑已确认全绿。
