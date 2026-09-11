@@ -1,0 +1,61 @@
+P5-A2/A3：计划期参数校验（D17+D18）+ 闭环账本与完成度
+
+一、代码（P5-A2）
+
+D17：LLMPlanner 计划校验只查工具名，不查参数类型
+
+  · 判据抽成模块级 agent/tools/base.py::describe_value_problem，
+    BaseTool.validate_params 与 LLMPlanner._validated_steps 共用同一份
+    —— 不另写第二份（本项目吃过"复刻判据"的亏：measure_asr_stimulus
+    曾复刻确认语匹配，报出产品已经不会犯的错）。
+  · 规划期现在查三类：①工具名在表内 ②参数类型合工具真实 schema
+    ③${sN} 引用不指向被丢弃/不存在的步骤。
+  · 取向与执行期一致：未声明字段放行、显式 None 视为未提供
+    （F 系列缺陷 4 回归保护）、畸形 schema 一律放行（不确定时不假装能判）。
+  · LLMPlanner 新增 _tool_params/_iter_tool_schemas 作为两种 schema
+    形制（D16）的单一收敛点；agent/seams/planner.py 新增
+    param_placeholders() 供 PlanStep.refs() 与规划器共用。
+
+D18（修 D17 时顺带发现并修掉，比 D17 更危险）：
+file_delete 把 targets 里的非字符串项 str() 之后照删
+
+  · targets=[["C:\\a.txt"]] 会变成字符串 "['C:\\\\a.txt']" —— 一个看起来
+    像列表的路径。危险不在"通常删不到"，而在"位置决定后果"：若 str(t)
+    恰好拼出白名单内且真实存在的名字，就会安静地删掉那个文件。
+  · 实测（docs/agent/evidence/p5/d18_items_probe.txt）：修前该假路径落在
+    项目工作目录 → 被白名单拦下 → 用户听到「删除失败了，可能是权限不够呢」，
+    真正原因（参数畸形）永不出现，排查被引到权限上。
+  · 修法：逐项必须是 str，否则整条拒绝并说明真正原因；preview/execute
+    结论一致；空串/None 这类空项仍按缺省处理（只收紧非字符串）。
+
+二、用例
+
+  · tests/agent/test_planner.py：TestPlanParamValidation（12 项）+
+    TestRealSchemaParamValidation（6 项，判据挂在真实工具 schema 上，
+    覆盖全项目唯一的 integer 与 enum）。
+  · tests/agent/test_file_tools.py：7 项（5 个参数化坏值 + 2 条反方向 +
+    1 条"错误里不许出现「权限」"）。
+
+三、账本（P5-A1/A3）
+
+  · docs/agent/p5-closure-plan.md（P5 立项：闭环 = 每项都有终态，
+    四种终态没有第五种）+ docs/agent/tasks-p5.json（17 项）。
+  · docs/agent/f-closure.md §17.4.1 复核段：刷新 7 处落后账本
+    （D13 提醒持久化 / 短句确认语 / 替身抖动成因 / medium 档 /
+    真 ST 模型 / 百度谷歌反爬 / web_open 真开），全部指到 p4 证据文件；
+    并列出 5 行"仍未到终态"及其归属。原文一行未改。
+  · 债务表：D17 标记已偿还（含判据共用与三类校验），新增 D18；
+    D14 记为终态「守护已交付 + 适配层明确不做」并附 3 条理由，
+    明确写出旧 EventBus 仍存在且在服务语音层（不装"已统一"）。
+  · AGENTS.md 新增「完成度（连口径）」一节：只报有分母的数字，
+    并写明为什么剩下的算不出百分比；同时把 P4 历史与验收阶段明细
+    移到 docs/agent/p4-history.md / acceptance-history.md
+    （AGENTS.md 有 65536 字节指令预算，本次已真的被静默截断过一次）。
+
+四、门禁（原始输出在 docs/agent/evidence/p5/）
+
+  · G1 语法：167 个文件 0 失败
+  · G2 全量回归：2668 passed / 1 skipped / 0 failed
+  · G3 覆盖率：口径内 7238 语句 0 未覆盖 100%
+    —— 未新增任何 pragma，覆盖率增加来自真实用例
+  · 端到端：P1 18/18、P3 44/44、指标 8/8

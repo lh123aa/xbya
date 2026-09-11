@@ -41,7 +41,9 @@ from agent.seams.planner import (
     Plan,
     PlannerService,
     PlanStep,
+    param_placeholders,
 )
+from agent.tools.base import describe_value_problem
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,42 @@ _DIRS_FALLBACK = (
     "\n可用目录：未提供（请直接用 Desktop / Documents / Downloads / Pictures "
     "这类目录名，不要编造绝对路径）\n"
 )
+
+
+def _iter_tool_schemas(schemas: Any) -> List[Dict[str, Any]]:
+    """把工具 schema 列表收敛成**扁平**的 `{name, description, parameters}` 列表
+
+    ## 为什么需要它（P5-B1 / D16）
+
+    项目里同时存在两种"llm schema"，**名字一样、形制不同**：
+
+    | 来源 | 形制 |
+    |------|------|
+    | `LLMRouter.TOOL_SCHEMAS` | 扁平：`{"name":…, "description":…, "parameters":…}` |
+    | `ToolRegistry.to_llm_schemas()`（经 `BaseTool.to_llm_schema()`） | 已包好：`{"type":"function","function":{…}}` |
+
+    规划器两种都会收到（`pipeline` 传的是注册表那份，测试传的是扁平的），
+    所以必须收敛。**收敛只写在这一处**：`_format_tools`（提示词清单）与
+    `_tool_params`（参数类型校验）都走它 —— 多写一份就会漂移，而漂移的表现是
+    "提示词里说这个工具长这样、校验时按另一个样子判"，极难查。
+
+    这是 D16 的**收敛点**：形制歧义不再散落在各个调用方，而是集中在这里被吸收。
+    """
+    out: List[Dict[str, Any]] = []
+    for schema in schemas or []:
+        fn = schema.get("function") if isinstance(schema, dict) else None
+        fn = fn if isinstance(fn, dict) else schema
+        if not isinstance(fn, dict):
+            continue
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "description": str(fn.get("description") or "").strip(),
+            "parameters": fn.get("parameters"),
+        })
+    return out
 
 
 class LLMPlanner(PlannerService):
@@ -167,7 +205,7 @@ class LLMPlanner(PlannerService):
             return None
 
         available = list(ctx.get("available_actions") or self._available)
-        steps = self._validated_steps(data, available)
+        steps = self._validated_steps(data, available, self._tool_params(ctx))
         if len(steps) < 2:
             logger.info("[planner/llm] 有效步骤不足 2 步（原始 %d 步），放弃规划",
                         len(data.get("steps") or []) if isinstance(data, dict) else 0)
@@ -312,26 +350,25 @@ class LLMPlanner(PlannerService):
         hint = str(context.get("memory_hint") or "").strip()
         return f"\n用户偏好（来自长期记忆，供参考）：{hint}" if hint else ""
 
+    def _tool_params(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """`{工具名: 参数 schema}`（供规划期做参数类型校验，P5-A2 / D17）"""
+        out: Dict[str, Any] = {}
+        for fn in _iter_tool_schemas(context.get("tool_schemas") or self._schemas):
+            out[fn["name"]] = fn.get("parameters")
+        return out
+
     def _format_tools(self, context: Dict[str, Any]) -> str:
         """把工具 schema 压成紧凑的工具清单
 
         优先用调用方临时传入的 schema（工具集可能在装配后变化）。
         """
-        schemas = context.get("tool_schemas") or self._schemas
         lines: List[str] = []
-
-        for schema in schemas[: self._max_tools]:
-            fn = schema.get("function") if isinstance(schema, dict) else None
-            fn = fn if isinstance(fn, dict) else schema
-            if not isinstance(fn, dict):
-                continue
-            name = str(fn.get("name") or "").strip()
-            if not name:
-                continue
-            desc = str(fn.get("description") or "").strip()
+        for fn in _iter_tool_schemas(context.get("tool_schemas") or self._schemas):
             props = _param_names(fn.get("parameters"))
             args = f"（参数：{', '.join(props)}）" if props else "（无参数）"
-            lines.append(f"- {name}{args} — {desc}")
+            lines.append(f"- {fn['name']}{args} — {fn['description']}")
+            if len(lines) >= self._max_tools:
+                break
 
         if lines:
             return "\n".join(lines)
@@ -361,12 +398,60 @@ class LLMPlanner(PlannerService):
     #  内部：输出校验
     # ══════════════════════════════════════════════
 
+    def _param_problem(self, params: Dict[str, Any], parameters: Any) -> Optional[str]:
+        """按工具的**真实参数 schema** 检查这一步的参数；返回问题说明或 None
+
+        规则与执行期 `BaseTool.validate_params` **完全一致** —— 判据本体是
+        `describe_value_problem`，两处共用，这里不重复实现任何类型判断
+        （连"schema 本身畸形怎么办"也由它回答：`spec` 不是 dict 一律放行）。
+
+        两条宽松约定同样与执行期一致：
+
+        · **未声明的字段放行** —— 执行期也放行；规划期若更严，就会丢掉
+          本来能跑通的计划（比执行期更严是另一种错）。
+        · **显式 `None` 视为"未提供"** —— F 系列缺陷 4 的回归保护：
+          LLM 给的 `{"time_range": null}` 曾经让整条计划在第 1 步中止。
+          （`describe_value_problem` 对 `None` 返回 `None`，所以这里不必再判。）
+        """
+        props = (parameters or {}).get("properties") if isinstance(parameters, dict) else None
+        if not isinstance(props, dict):
+            return None
+        for key, value in params.items():
+            spec = props.get(key)
+            if spec is None:
+                continue
+            problem = describe_value_problem(value, spec)
+            if problem:
+                return f"{key}: {problem}"
+        return None
+
     def _validated_steps(
         self,
         data: Any,
         available: List[str],
+        tool_params: Optional[Dict[str, Any]] = None,
     ) -> List[PlanStep]:
-        """把 LLM 输出收敛成合法步骤（丢弃坏步骤，保留好步骤）"""
+        """把 LLM 输出收敛成合法步骤（丢弃坏步骤，保留好步骤）
+
+        ## 校验三类东西（P5-A2 / D17 之前只校验第 1 类）
+
+        | # | 校验 | 不校验的后果 |
+        |---|------|-------------|
+        | 1 | **工具名在可用表内** | 计划带着不存在的工具往下走 |
+        | 2 | **参数类型符合工具真实 schema** | 计划"成功"拆出来，到**执行期**才被 `validate_params` 拦下 → 用户听到"这个指令我还没完全理解"。实测过 LLM 给出 `pattern: ["*.exe","*.msi"]`（该字段是 string）、`file_move.source` 给列表、`targets` 又套一层列表 |
+        | 3 | **步骤间引用的步骤 ID 真实存在** | `${s2.paths}` 指向一个被丢弃（或压根不存在）的步骤时，占位符解析不出来 → **原样字符串**喂给工具 → 用户看到莫名其妙的失败 |
+
+        第 3 类是本轮新增的：原先丢弃坏步骤后**不检查**剩下的步骤有没有引用它。
+        实测确认丢弃**不会**让步骤重新编号（`step_id` 用的是原始下标），
+        所以不会出现"引用被静默改指向另一步"这种更危险的情况 ——
+        但悬空引用仍会让计划带着一个必然失败的参数往下走。
+
+        Args:
+            data: LLM 解析出来的 JSON
+            available: 可用工具名（空 = 不知道，放行）
+            tool_params: `{工具名: parameters schema}`；为空时**跳过第 2 类校验**
+                （与"不知道有哪些工具就放行"同一个取向：不确定时不假装能判）
+        """
         if not isinstance(data, dict):
             return []
 
@@ -374,7 +459,8 @@ class LLMPlanner(PlannerService):
         if not isinstance(raw_steps, list):
             return []
 
-        steps: List[PlanStep] = []
+        # ── 第一遍：逐条判定，坏步骤只记账不丢（因为第 3 类校验要看"谁活下来了"）──
+        candidates: List[tuple] = []          # (index, entry, action, params, reason)
         for idx, entry in enumerate(raw_steps, start=1):
             if not isinstance(entry, dict):
                 continue
@@ -388,6 +474,27 @@ class LLMPlanner(PlannerService):
             if not isinstance(params, dict):
                 params = {}
 
+            reason = ""
+            if tool_params:
+                reason = self._param_problem(params, tool_params.get(action)) or ""
+            candidates.append((idx, entry, action, params, reason))
+
+        good_ids = {f"s{idx}" for idx, _e, _a, _p, r in candidates if not r}
+
+        # ── 第二遍：悬空引用也要丢（第 3 类校验）──
+        steps: List[PlanStep] = []
+        for idx, entry, action, params, reason in candidates:
+            step_id = f"s{idx}"
+            if not reason:
+                dangling = [r for r in param_placeholders(params)
+                            if r not in good_ids and r != step_id]
+                if dangling:
+                    reason = f"引用了不存在的步骤 {dangling}（该步骤已被丢弃）"
+
+            if reason:
+                logger.warning("[planner/llm] 丢弃步骤 %d（%s）：%s", idx, action, reason)
+                continue
+
             depends = entry.get("depends_on")
             depends_on = (
                 [str(d) for d in depends if isinstance(d, (str, int))]
@@ -398,7 +505,7 @@ class LLMPlanner(PlannerService):
                 PlanStep(
                     action=action,
                     params=dict(params),
-                    step_id=f"s{idx}",
+                    step_id=step_id,
                     description=str(entry.get("description") or "").strip(),
                     depends_on=depends_on,
                 )

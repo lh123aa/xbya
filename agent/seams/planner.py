@@ -59,6 +59,25 @@ class PlanStatus(str, Enum):
     CANCELLED = "cancelled"    # 被用户取消或打断
 
 
+def param_placeholders(params: Dict[str, Any]) -> List[str]:
+    """从参数字典里取出**被引用的步骤 ID**（去重、保持出现顺序）
+
+    抽成模块级函数是为了让两处共用同一套占位符扫描：
+      · `PlanStep.refs()` —— 消费方（管线）用
+      · `LLMPlanner._validated_steps` —— 规划期校验"引用的步骤是否存在"（P5-A2）
+    占位符语法只在这个文件里定义（`PLACEHOLDER_RE`），复刻一份就会漂移。
+    """
+    found: List[str] = []
+    for value in _walk_values(params):
+        if not isinstance(value, str):        # pragma: no cover - _walk_values 只产出 str
+            continue
+        for m in PLACEHOLDER_RE.finditer(value):
+            head = m.group(1).split(".", 1)[0]
+            if head and head not in found:
+                found.append(head)
+    return found
+
+
 @dataclass(slots=True)
 class PlanStep:
     """计划中的一步
@@ -83,15 +102,7 @@ class PlanStep:
 
     def refs(self) -> List[str]:
         """本步参数里引用的全部步骤 ID（去重，保持出现顺序）"""
-        found: List[str] = []
-        for value in _walk_values(self.params):
-            if not isinstance(value, str):    # pragma: no cover - _walk_values 只产出 str
-                continue
-            for m in PLACEHOLDER_RE.finditer(value):
-                head = m.group(1).split(".", 1)[0]
-                if head and head not in found:
-                    found.append(head)
-        return found
+        return param_placeholders(self.params)
 
 
 @dataclass

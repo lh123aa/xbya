@@ -42,6 +42,8 @@ from agent.seams.planner import (
     resolve_placeholders,
 )
 from agent.tools.base import BaseTool, ToolResult
+from agent.tools.file_tools import FileMoveTool
+from agent.tools.memory_tools import MemoryRecallTool
 from agent.tools.registry import ToolRegistry
 from core.kernel.context import Context
 from core.kernel.events import EventBus, EventTypes
@@ -1830,3 +1832,310 @@ class TestPipelineSingleStepUnchanged:
             assert st["plans"] == 0 and st["plan_steps"] == 0
         finally:
             pipe.stop(); ex.shutdown()
+
+
+# ══════════════════════════════════════════════════════
+#  规划期参数类型校验（P5-A2 / D17）
+# ══════════════════════════════════════════════════════
+
+#: 带**真实 type** 的 schema —— 校验要靠它，所以不能像 SCHEMAS 那样留空
+TYPED_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "file_search", "description": "搜索",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"},
+            "dirs": {"type": "array"},
+            "time_range": {"type": "string"}}}}},
+    {"type": "function", "function": {
+        "name": "file_move", "description": "移动",
+        "parameters": {"type": "object", "properties": {
+            "source": {"type": "string"},
+            "dest": {"type": "string"}}}}},
+    {"type": "function", "function": {
+        "name": "file_delete", "description": "删除",
+        "parameters": {"type": "object", "properties": {
+            "targets": {"type": "array"}}}}},
+]
+
+_NAMES = ["file_search", "file_move", "file_delete"]
+
+
+class TestPlanParamValidation:
+    """D17：规划期就按工具**真实 schema** 校验参数类型
+
+    背景：原先只校验工具名，于是 LLM 给出的 `pattern: ["*.exe","*.msi"]`
+    （该字段是 string）能"成功"拆成计划，一路走到**执行期**才被 `validate_params`
+    拦下 —— 用户听到的是"这个指令我还没完全理解"，而规划器那边看起来一切正常。
+    实测抓到过三种：`pattern` 给列表、`file_move.source` 给列表、`targets` 套一层列表。
+    """
+
+    def _p(self, response, **kw):
+        kw.setdefault("available_actions", list(_NAMES))
+        kw.setdefault("tool_schemas", TYPED_SCHEMAS)
+        return LLMPlanner(llm_call=_llm(response), **kw)
+
+    def _plan(self, response, **kw):
+        return self._p(response, **kw).plan("先找再挪", {})
+
+    # ── 正方向：坏参数必须被拦在规划期 ──
+
+    def test_wrong_type_param_drops_that_step(self):
+        """`pattern` 给了列表 → 该步被丢弃，其余步骤保留（编号不重排）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*"}},'
+            '{"action":"file_search","params":{"pattern":["*.exe","*.msi"]}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is not None, "丢掉中间一步后仍有两步，计划应当保留"
+        assert [s.action for s in plan.steps] == ["file_search", "file_move"]
+        assert [s.step_id for s in plan.steps] == ["s1", "s3"], (
+            "step_id 必须保持**原始下标** —— 重排会让 ${s2.paths} 静默指向另一步"
+        )
+
+    def test_dropped_step_is_logged_with_param_name(self, caplog):
+        """丢弃必须留痕，且要点明**哪个参数**错在哪（否则等于静默丢弃）"""
+        import logging
+        with caplog.at_level(logging.WARNING):
+            self._plan(
+                '{"steps":['
+                '{"action":"file_search","params":{"pattern":"*a*"}},'
+                '{"action":"file_search","params":{"pattern":["x"]}},'
+                '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+                ']}'
+            )
+        assert "丢弃步骤 2" in caplog.text
+        # 「哪个参数 + 期望什么 + 收到什么」三样都要有，否则排查时等于没说
+        assert "pattern" in caplog.text
+        assert "期望 string" in caplog.text, "要说明期望的类型"
+        assert "收到 list" in caplog.text, "要说明实际收到的类型"
+
+    def test_dangling_reference_also_dropped(self):
+        """引用了**已被丢弃**的步骤 → 该步也丢（悬空占位符必然失败）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*"}},'
+            '{"action":"file_search","params":{"pattern":["x"]}},'
+            '{"action":"file_move","params":{"source":"${s2.paths}","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is None, (
+            "s2 被丢后 s3 的 ${s2.paths} 解析不出来，会原样字符串喂给工具 —— "
+            "只剩 1 步有效 → 应当判定规划失败"
+        )
+
+    # ── 反方向：不许误伤 ──
+
+    def test_correct_plan_untouched(self):
+        """类型全对的三步计划**一步都不能少**（防"修到不能干活"）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*","dirs":["Downloads"]}},'
+            '{"action":"file_move","params":{"source":"${s1.paths.0}","dest":"Documents"}},'
+            '{"action":"file_delete","params":{"targets":["${s1.paths}"]}}'
+            ']}'
+        )
+        assert plan is not None
+        assert [s.action for s in plan.steps] == ["file_search", "file_move", "file_delete"]
+        assert [s.step_id for s in plan.steps] == ["s1", "s2", "s3"]
+
+    def test_explicit_null_optional_still_allowed(self):
+        """`{"time_range": null}` 必须仍放行 —— F 系列缺陷 4 的回归保护
+
+        显式 JSON null 在 function calling 里是"这个参数我没填"的常见表达，
+        执行期把它当"未提供"；规划期若更严，就会丢掉本来能跑通的计划。
+        """
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*","time_range":null}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is not None and len(plan.steps) == 2
+
+    def test_undeclared_field_still_allowed(self):
+        """未声明的字段放行（与执行期同规则；规划期更严是另一种错）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*","whatever":1}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is not None and len(plan.steps) == 2
+
+    def test_malformed_schema_spec_is_not_a_violation(self):
+        """字段 schema 本身畸形（不是 dict）→ **放行**，不能反过来丢掉用户的计划
+
+        畸形的 schema 只会来自 LLM 侧（手写工具不会把 `parameters.properties.pattern`
+        写成字符串）。取向与"不知道有哪些工具就放行"一致：
+        **不确定时不假装能判** —— 判错的代价是用户的操作被静默吞掉。
+        """
+        broken = [{"type": "function", "function": {
+            "name": "file_search", "description": "搜索",
+            "parameters": {"type": "object", "properties": {"pattern": "string"}}}}]
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*"}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}',
+            tool_schemas=broken,
+        )
+        assert plan is not None and len(plan.steps) == 2
+
+    def test_without_schemas_validation_is_skipped(self):
+        """没给 schema 时**不假装能判**（与"不知道有哪些工具就放行"同一取向）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*"}},'
+            '{"action":"file_search","params":{"pattern":["x"]}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}',
+            tool_schemas=[],
+        )
+        assert plan is not None
+        assert len(plan.steps) == 3, "无 schema 时不该丢步骤"
+
+    def test_no_schemas_but_dangling_ref_still_dropped(self):
+        """没 schema 时仍然能查"引用的步骤是否存在"（那不需要 schema）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"file_search","params":{"pattern":"*a*"}},'
+            '{"action":"file_move","params":{"source":"${s9.paths}","dest":"Desktop"}}'
+            ']}',
+            tool_schemas=[],
+        )
+        assert plan is None, "引用了不存在的 s9 → 只剩 1 步 → 规划失败"
+
+    # ── 判据与执行期一致（共用 describe_value_problem）──
+
+    def test_same_rule_as_executor(self):
+        """同一个坏值，规划期与执行期给出的说法必须**一致**
+
+        判据本体是 `agent.tools.base.describe_value_problem`，两处共用。
+        这条用例把"共用"钉住：若将来有人在规划器里另写一份，两边文案会先分叉。
+        """
+        from agent.tools.base import describe_value_problem
+
+        spec = {"type": "array"}
+        planner_msg = LLMPlanner()._param_problem({"targets": "C:\\a.txt"},
+                                                  {"type": "object",
+                                                   "properties": {"targets": spec}})
+        direct = describe_value_problem("C:\\a.txt", spec)
+        assert direct is not None
+        assert direct in planner_msg
+
+#: 判据必须挂在**真实工具 schema** 上，而不是只为测试写的小 schema。
+#: 这两个工具覆盖了全项目唯一的 `integer`（`memory_recall.limit`）与
+#: 唯一的 `enum`（`kind`）—— 也就是说"布尔不能当整数""取值必须在枚举内"
+#: 这两条判据在规划期**只有它们能测到**。
+_REAL_TOOLS = [MemoryRecallTool(), FileMoveTool(BasicGuard())]
+REAL_SCHEMAS = [t.to_llm_schema() for t in _REAL_TOOLS]
+
+
+class TestRealSchemaParamValidation:
+    """同一套判据挂在**真实工具 schema**（取自注册表）上的效果
+
+    与 `TestPlanParamValidation` 的区别：那组用的是为测试写的小 schema，
+    这组用的是 `BaseTool.to_llm_schema()` 的**真实输出** ——
+    因为"不另写一份判据"这件事，只有在真 schema 上成立才算数。
+    """
+
+    _REAL_NAMES = [t.name for t in _REAL_TOOLS]
+
+    def _p(self, response):
+        return LLMPlanner(
+            llm_call=_llm(response),
+            available_actions=list(self._REAL_NAMES),
+            tool_schemas=REAL_SCHEMAS,
+        )
+
+    def _plan(self, response):
+        """跑一次规划（`_p` 造规划器，这里统一走 `.plan()`）"""
+        return self._p(response).plan("回忆一下", {})
+
+    def test_real_schema_rejects_wrong_enum(self):
+        """`kind` 不在 enum 里 → 丢该步（真实 schema 带 enum）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"memory_recall","params":{"query":"浏览器","kind":"preference"}},'
+            '{"action":"memory_recall","params":{"query":"浏览器","kind":"随便编的"}}'
+            ']}'
+        )
+        assert plan is None, "两步都被判坏 → 有效步骤不足 2 步"
+
+    def test_real_schema_rejects_boolean_as_integer(self):
+        """布尔是 int 的子类 → `limit: true` 必须被拦（否则 `int(True)` = 1 条）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"memory_recall","params":{"query":"a"}},'
+            '{"action":"memory_recall","params":{"query":"b","limit":true}}'
+            ']}'
+        )
+        assert plan is None
+
+    def test_real_schema_rejects_limit_out_of_range(self):
+        """`limit: 9999` 超 `maximum` → 丢该步
+
+        这一条尤其值：`MemoryRecallTool._limit` 会**静默夹到上限**，
+        于是"用户要 9999 条"与"用户要 20 条"在结果上完全一样。
+        规划期拦下比工具静默夹更有信息量。
+        """
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"memory_recall","params":{"query":"a"}},'
+            '{"action":"memory_recall","params":{"query":"b","limit":9999}}'
+            ']}'
+        )
+        assert plan is None
+
+    def test_real_schema_allows_reasonable_limit(self):
+        """反方向：`limit: 3` 是合法值 → 两步都在（防"只要带 limit 就丢"）"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"memory_recall","params":{"query":"a","limit":3}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is not None and len(plan.steps) == 2
+
+    def test_real_schema_omitted_optional_field_fine(self):
+        """反方向：可选字段不写（最常见的情形）→ 不受影响"""
+        plan = self._plan(
+            '{"steps":['
+            '{"action":"memory_recall","params":{"query":"a"}},'
+            '{"action":"file_move","params":{"source":"a.txt","dest":"Desktop"}}'
+            ']}'
+        )
+        assert plan is not None and len(plan.steps) == 2
+
+    def test_tool_params_uses_registry_schemas_verbatim(self):
+        """`_tool_params` 取的就是注册表 schema 的**原文**，没有中间转换
+
+        这是"不另写一份判据"的可检查形式：只要它原样透出 `minimum`/`maximum`/`enum`，
+        就没有第二套类型表在中间做有损转换。
+        """
+        import json as _json
+
+        params = LLMPlanner(tool_schemas=REAL_SCHEMAS)._tool_params({})
+        from_registry = {}
+        for t in _REAL_TOOLS:
+            from_registry[t.name] = t.to_llm_schema()["function"]["parameters"]
+        assert _json.dumps(params, sort_keys=True, ensure_ascii=False) == \
+            _json.dumps(from_registry, sort_keys=True, ensure_ascii=False)
+        limit = params["memory_recall"]["properties"]["limit"]
+        assert limit["type"] == "integer" and "maximum" in limit
+
+    def test_tool_params_converges_both_schema_shapes(self):
+        """D16 的收敛点：已包好与扁平两种形制都要能取出 `parameters`"""
+        wrapped = [{"type": "function", "function": {
+            "name": "file_search",
+            "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}}}}]
+        flat = [{"name": "file_search",
+                 "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}}}]
+        a = LLMPlanner(tool_schemas=wrapped)._tool_params({})
+        b = LLMPlanner(tool_schemas=flat)._tool_params({})
+        assert a == b
+        assert set(a) == {"file_search"}
+        assert "pattern" in a["file_search"]["properties"]
+

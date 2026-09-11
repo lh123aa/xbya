@@ -841,7 +841,30 @@ class FileDeleteTool(_FileToolBase):
 
         explicit = params.get("targets")
         if isinstance(explicit, list):
-            raw.extend([str(t) for t in explicit if t])
+            # 逐项必须是字符串（P5-A2 / D18）。
+            #
+            # 原先写的是 `str(t) for t in explicit if t`，于是**非字符串项被静默字符串化**：
+            # `[["C:\\a.txt"]]` → `"['C:\\\\a.txt']"` —— 一个"看起来像列表的路径"。
+            # 危险不在于它会删错文件，而在于**它有可能不删错**：
+            #
+            # · 该假路径通常落在项目工作目录下 → 被白名单拦下 → 用户听到的是
+            #   「删除失败了，可能是权限不够呢」。**真正的原因（参数畸形）永远不出现**，
+            #   排查方向被引到权限上去。
+            # · 反例更糟：若 `str(t)` 之后恰好拼出一个**在白名单内且真实存在**的名字，
+            #   就会安静地删掉那个文件 —— 这一类"位置决定后果"的输入必须在入口拒绝。
+            #
+            # 取向与 P4-B2 一致：**宁可什么都不删，也不猜**（列表参数收到字符串时
+            # 也是整条忽略，绝不拆开）。
+            bad = [t for t in explicit if t and not isinstance(t, str)]
+            if bad:
+                detail = (f"targets 里含有非字符串项 {bad[:3]!r}"
+                          f"（共 {len(bad)} 项）；每一项都得是文件名或路径字符串")
+                raise ToolError(
+                    self.name,
+                    detail,
+                    user_message="你要删的是哪些文件呀？我没看懂这一串。",
+                )
+            raw.extend([t for t in explicit if t])
 
         pattern = params.get("pattern")
         if pattern:

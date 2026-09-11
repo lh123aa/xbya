@@ -113,6 +113,101 @@ class ToolResult:
         return cls.ok(data=[], summary=summary, count=0, **kwargs)
 
 
+#: JSON Schema 子集 → Python 类型
+#:
+#: 布尔是 int 的子类，所以 `integer` 要单独先判（见 `describe_value_problem`）。
+SCHEMA_TYPE_MAP: Dict[str, Any] = {
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def describe_value_problem(value: Any, spec: Any) -> Optional[str]:
+    """按 schema 检查一个值，返回**可读的问题说明**；没问题返回 `None`
+
+    ## 为什么是一个模块级函数（P5-A2 / D17）
+
+    "这个值符不符合 schema"这件事，现在有**两个调用方**：
+
+    | 调用方 | 时机 | 用途 |
+    |--------|------|------|
+    | `BaseTool.validate_params` | **执行期** | 不符就抛 `ParamError`，工具不执行 |
+    | `LLMPlanner._validated_steps` | **规划期** | 不符就丢弃该步骤，避免计划带着坏参数往下走 |
+
+    两处必须用**同一套判据**。刻意不写两份 —— 本项目吃过"复刻一份判据"的亏：
+    `tools/measure_asr_stimulus.py` 曾经自己复刻了一份"确认语子串匹配"，
+    于是**报出产品已经不会犯的错**，还把假象记在了别的东西账上（见 P4-C2）。
+    判据一旦复刻就会漂移，而漂移的检测成本远高于共用。
+
+    Args:
+        value: 待检查的值
+        spec: 该字段的 schema 片段（`{"type": ..., "enum": ..., ...}`）。
+
+            **不是 `dict` 时一律放行**（返回 `None`）：这个判断放在这里而不是留给
+            两个调用方各写一遍 —— 写两遍就会出现"两处对畸形 schema 的处理不一致"，
+            而规划期的容错取向是**不确定时不假装能判**（与"不知道有哪些工具就放行"
+            同一条）。`spec=None` / `spec="string"` 这类畸形输入来自 LLM 侧，
+            不能让它们变成"计划被静默丢掉"。
+
+    Returns:
+        问题说明（面向开发者，会被 `ParamError` 拼上工具名与字段名）；合法时 `None`
+    """
+    if not isinstance(spec, dict):
+        return None
+
+    # 显式 `None` 一律视为"未提供"。
+    #
+    # 这是 F 系列缺陷 4 的回归保护，且必须放在这里（共用判据的入口）而不是
+    # 留给调用方：LLM 给的 `{"time_range": null}` 曾经让整条计划在第 1 步中止，
+    # 而"null = 没填"是 function calling 里最常见的一种表达。
+    # `BaseTool.validate_params` 在更上游就把 `None` 当缺省值摘掉了，
+    # 所以这条分支在执行期路径上不会被走到。
+    if value is None:
+        return None
+
+    expected = spec.get("type")
+
+    if expected and expected in SCHEMA_TYPE_MAP:
+        py_type = SCHEMA_TYPE_MAP[expected]
+        if expected == "integer" and isinstance(value, bool):
+            return "期望整数，收到布尔值"
+        # `array` 收到字符串要**显式拒绝**，且文案要能照做（P4-B2 / 缺陷 17b）。
+        #
+        # 为什么单独开一条分支而不是靠通用的类型报错：字符串是**可迭代**的，
+        # 一个 "Downloads" 传进 `for item in dirs` 会被逐字符拆开，最后
+        # "一个字符都匹配不上" → 调用方静默回退默认目录。也就是说
+        # 类型错了却**不报错**，只是范围悄悄变大（实测见 docs/agent/p4-plan.md §B2）。
+        # 通用文案只说"期望 array，收到 str"，看不懂的人会去猜；这里直接给出
+        # 一个可照抄的写法。逗号串（"Downloads,Documents"）走同一条分支 ——
+        # **不拆**，因为"把一句话拆成多个待删目标"正是最危险的宽松转换。
+        if expected == "array" and isinstance(value, str):
+            return (f'期望数组，收到字符串 {value!r}；即使只有一个值也请写成数组，'
+                    f'例如 ["{value}"]')
+        if not isinstance(value, py_type):
+            return f"类型错误：期望 {expected}，收到 {type(value).__name__}"
+
+    if "enum" in spec and value not in spec["enum"]:
+        return f"取值必须是 {spec['enum']} 之一，收到 {value!r}"
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in spec and value < spec["minimum"]:
+            return f"小于最小值 {spec['minimum']}"
+        if "maximum" in spec and value > spec["maximum"]:
+            return f"超过最大值 {spec['maximum']}"
+
+    if isinstance(value, list):
+        if "minItems" in spec and len(value) < spec["minItems"]:
+            return f"元素少于 {spec['minItems']} 个"
+        if "maxItems" in spec and len(value) > spec["maxItems"]:
+            return f"元素超过 {spec['maxItems']} 个"
+
+    return None
+
+
 class BaseTool(ABC):
     """所有工具的基类
 
@@ -212,67 +307,14 @@ class BaseTool(ABC):
             self._validate_field(key, value, spec)
 
     def _validate_field(self, key: str, value: Any, spec: Dict[str, Any]) -> None:
-        """校验单个字段"""
-        expected = spec.get("type")
+        """校验单个字段
 
-        # 布尔是 int 的子类，需先判断
-        type_map = {
-            "string": str,
-            "integer": int,
-            "number": (int, float),
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-
-        if expected and expected in type_map:
-            py_type = type_map[expected]
-            if expected == "integer" and isinstance(value, bool):
-                raise ParamError(self.name, "期望整数，收到布尔值", key)
-            # `array` 收到字符串要**显式拒绝**，且文案要能照做（P4-B2 / 缺陷 17b）。
-            #
-            # 为什么单独开一条分支而不是靠下面通用的类型报错：字符串是**可迭代**的，
-            # 一个 "Downloads" 传进 `for item in dirs` 会被逐字符拆开，最后
-            # "一个字符都匹配不上" → 调用方静默回退默认目录。也就是说
-            # 类型错了却**不报错**，只是范围悄悄变大（实测见 docs/agent/p4-plan.md §B2）。
-            # 通用文案只说"期望 array，收到 str"，看不懂的人会去猜；这里直接给出
-            # 一个可照抄的写法。逗号串（"Downloads,Documents"）走同一条分支 ——
-            # **不拆**，因为"把一句话拆成多个待删目标"正是最危险的宽松转换。
-            if expected == "array" and isinstance(value, str):
-                raise ParamError(
-                    self.name,
-                    f'期望数组，收到字符串 {value!r}；即使只有一个值也请写成数组，'
-                    f'例如 ["{value}"]',
-                    key,
-                )
-            if not isinstance(value, py_type):
-                raise ParamError(
-                    self.name,
-                    f"类型错误：期望 {expected}，收到 {type(value).__name__}",
-                    key,
-                )
-
-        # 枚举
-        if "enum" in spec and value not in spec["enum"]:
-            raise ParamError(
-                self.name,
-                f"取值必须是 {spec['enum']} 之一，收到 {value!r}",
-                key,
-            )
-
-        # 数值范围
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            if "minimum" in spec and value < spec["minimum"]:
-                raise ParamError(self.name, f"小于最小值 {spec['minimum']}", key)
-            if "maximum" in spec and value > spec["maximum"]:
-                raise ParamError(self.name, f"超过最大值 {spec['maximum']}", key)
-
-        # 数组约束
-        if isinstance(value, list):
-            if "minItems" in spec and len(value) < spec["minItems"]:
-                raise ParamError(self.name, f"元素少于 {spec['minItems']} 个", key)
-            if "maxItems" in spec and len(value) > spec["maxItems"]:
-                raise ParamError(self.name, f"元素超过 {spec['maxItems']} 个", key)
+        判据本体在模块级 `describe_value_problem()` —— 规划期也会调它，
+        两处必须同一套规则（见该函数的说明）。
+        """
+        problem = describe_value_problem(value, spec)
+        if problem:
+            raise ParamError(self.name, problem, key)
 
     # ── 风险与确认 ──
 

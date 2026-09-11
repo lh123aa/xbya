@@ -1,0 +1,214 @@
+{
+  "phase": "P5",
+  "title": "完全闭环轮：把每一条已登记项推到终态",
+  "created": "2026-09-11",
+  "plan": "docs/agent/p5-closure-plan.md",
+  "authority": "AGENTS.md",
+  "closure_states": {
+    "fixed": "✅ 已修 —— 有代码改动 + 有用例 + 过门禁",
+    "measured": "✅ 已实测 —— 有原始输出留档，结论明确（允许结论是「不可为」）",
+    "wont_do": "⬜ 明确不做 —— 写明理由，且理由要能被反驳（不是「没时间」）",
+    "human": "🟡 待人工 —— 附最小操作路径 + 可判定判据，并说明为什么 AI 做不了"
+  },
+  "note": "没有第五种终态；「以后再说」不是终态。证据统一落 docs/agent/evidence/p5/。",
+  "tasks": [
+    {
+      "id": "P5-A1",
+      "priority": "P0",
+      "title": "账本不再说谎：刷新 f-closure.md §17.4 的 7 处落后 + 写出「完成度（连口径）」一节",
+      "state": "pending",
+      "why_p0": "不做完它，「完全闭环」这个结论无法被检验",
+      "evidence": [
+        "docs/agent/f-closure.md",
+        "AGENTS.md"
+      ],
+      "acceptance": [
+        "7 处落后全部以「追加复核段」方式刷新（不重写原文）",
+        "AGENTS.md 新增一节说明口径内/口径外/待人工，不给没有分母的百分比",
+        "G13 通过"
+      ]
+    },
+    {
+      "id": "P5-A2",
+      "priority": "P0",
+      "title": "D17：LLMPlanner 计划参数类型校验",
+      "state": "fixed",
+      "why_p0": "唯一一条会真实影响用户结果的安全相关代码债",
+      "evidence": [
+        "docs/agent/evidence/p5/g1_py_compile.txt",
+        "docs/agent/evidence/p5/g2_g3_tests_coverage.txt",
+        "docs/agent/evidence/p5/d17_plan_param_validation.txt"
+      ],
+      "acceptance": [
+        "类型不符的步骤被丢弃且记日志（说明丢了哪一步、为什么）",
+        "合法多步计划一步不少（反方向用例）",
+        "判据共用 describe_value_problem，不另写一份",
+        "{\"time_range\": null} 仍放行（F 系列缺陷 4 回归保护）",
+        "全量回归零失败 + 覆盖率口径内 100%"
+      ],
+      "files": [
+        "agent/tools/base.py",
+        "agent/seams/planner.py",
+        "agent/providers/planner/llm_planner.py",
+        "tests/agent/test_planner.py"
+      ]
+    },
+    {
+      "id": "P5-A3",
+      "priority": "P0",
+      "title": "B1 终态登记：EventBus 适配层「明确不做」+ 3 条理由",
+      "state": "pending",
+      "why_p0": "它决定「闭环」能不能宣告；且必须写进债务表才叫终态",
+      "evidence": [
+        "AGENTS.md"
+      ],
+      "acceptance": [
+        "D14 行写明「守护已交付 + 适配层明确不做」并附 3 条理由",
+        "措辞不得暗示两个总线已统一；必须说清旧类仍在且仍在服务语音层"
+      ]
+    },
+    {
+      "id": "P5-B1",
+      "priority": "P1",
+      "title": "D16 守护：把注册表 schema 直接喂给 chat_with_tools 必须显式拒绝或自动纠正",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/d16_schema_shape.txt"
+      ],
+      "acceptance": [
+        "不得静默产生无名工具",
+        "两种形制要么统一、要么由类型/断言约束"
+      ]
+    },
+    {
+      "id": "P5-B2",
+      "priority": "P1",
+      "title": "voice_service 加载 ASR 时透传 params（与 core/app.py 行为一致）",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/voice_service_params.txt"
+      ],
+      "acceptance": [
+        "两条加载路径行为一致",
+        "用例断言 ASR 参数确实透传（model_size / initial_prompt 不再静默失效）"
+      ]
+    },
+    {
+      "id": "P5-B3",
+      "priority": "P1",
+      "title": "真 ST 嵌入器 + vec0 端到端：384 维写入与检索，维度变化时索引被重建",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/st_vec0_e2e.txt"
+      ],
+      "acceptance": [
+        "真模型写入一条记忆并检索回来",
+        "维度变化时索引被重建且如实报告"
+      ]
+    },
+    {
+      "id": "P5-B4",
+      "priority": "P1",
+      "title": "ASR medium/small 长句对比（补 C2 只测短句的缺口）",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/asr_long_sentence.txt"
+      ],
+      "acceptance": [
+        "同一批长句在 small/medium 下对比并给出数字",
+        "结论允许是「差异不明显」"
+      ]
+    },
+    {
+      "id": "P5-B5",
+      "priority": "P1",
+      "title": "C4 解析器离线 fixture：必应/百度/谷歌形态 SERP 各一份",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/serp_parser.txt"
+      ],
+      "acceptance": [
+        "fixture 取自真实抓到的 HTML（evidence/p4/_tmp_c4_raw_*.html），不是手写",
+        "对必应能解析；对百度/谷歌形态给出如实结论"
+      ]
+    },
+    {
+      "id": "P5-C1",
+      "priority": "P2",
+      "title": "轮换两个已泄露的 key（Groq / OpenRouter）",
+      "state": "human",
+      "minimal_path": "厂商控制台各生成新 key → 覆盖 config.yaml 的 api_key 与 fallback_api_key → python tools/probe_llm_capability.py --engine universal",
+      "why_ai_cannot": "没有厂商控制台权限",
+      "evidence": [
+        "docs/agent/evidence/p5/key_rotation.txt"
+      ]
+    },
+    {
+      "id": "P5-C2",
+      "priority": "P2",
+      "title": "人工验收 M1~M5 + G1（麦克风 / GUI 动效 / 人耳听感）",
+      "state": "human",
+      "minimal_path": "python tools/prepare_manual_acceptance.py init → 照 docs/agent/manual-acceptance.md 做 → 证据放 evidence/manual/ → 结论写 结论.md → python tools/check_manual_evidence.py",
+      "why_ai_cannot": "麦克风采集、GUI 动效、人耳听感只有人能判",
+      "evidence": [
+        "docs/agent/evidence/manual/"
+      ]
+    },
+    {
+      "id": "P5-C3",
+      "priority": "P2",
+      "title": "D3 多用户隔离",
+      "state": "wont_do",
+      "reason": "无产品需求；框架已支持 ctx.fork()，需要时接上即可 —— 现在做就是为不存在的需求付维护成本"
+    },
+    {
+      "id": "P5-C4",
+      "priority": "P2",
+      "title": "天气做 IP 定位",
+      "state": "wont_do",
+      "reason": "有意取舍：不把用户 IP 交给第三方。代价是没说城市时如实失败（可用 agent.weather.default_city 配默认）"
+    },
+    {
+      "id": "P5-C5",
+      "priority": "P2",
+      "title": "D7 间歇性崩溃",
+      "state": "wont_do",
+      "reason": "已用确定性收尾消除（修前 11 轮 2 次 → 修后 28+ 轮 0 次）。保留登记直到有跨机器/跨版本样本 —— 这是保留登记，不是未做"
+    },
+    {
+      "id": "P5-C6",
+      "priority": "P2",
+      "title": "繁简归一化的边界（繁体命名的文件搜不到）",
+      "state": "wont_do",
+      "reason": "有意取舍：归一化方向是「找不到」而不是「删错」（安全侧）。要两边全覆盖得给工具加多模式，而同时匹配繁简会扩大匹配面 —— 对 file_delete 是增加风险"
+    },
+    {
+      "id": "P5-C7",
+      "priority": "P2",
+      "title": "中文查询命中引擎诱饵页",
+      "state": "wont_do",
+      "reason": "服务端行为，解析层修不了；已加相关性护栏（宁说「没搜到」也不念垃圾）"
+    },
+    {
+      "id": "P5-C8",
+      "priority": "P2",
+      "title": "历史阶段（P0~P3）任务清单不追溯补写",
+      "state": "wont_do",
+      "reason": "tasks.json / tasks-p2.json / tasks-p3.json 无 tasks 数组（审计实测 0 项）；追溯补写当时的判据本身就是编造风险。G13 对空清单报「跳过」而非「通过」，不制造虚绿"
+    },
+    {
+      "id": "P5-AUDIT",
+      "priority": "P2",
+      "title": "收口审计：四条终态逐条可查 + 完成度说明连口径",
+      "state": "pending",
+      "evidence": [
+        "docs/agent/evidence/p5/closure_audit.txt"
+      ],
+      "acceptance": [
+        "逐条列出每项的终态与证据路径",
+        "13 关验收内部 7/7、外部 6/6，留原始输出",
+        "无「以后再说」类措辞残留"
+      ]
+    }
+  ]
+}

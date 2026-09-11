@@ -864,6 +864,74 @@ class TestFileDeleteSafety:
         assert r.success is False
         assert "哪些文件" in r.summary
 
+    @pytest.mark.parametrize("bad_item", [["a.txt"], {"p": "a.txt"}, 123, 1.5, True])
+    def test_delete_non_string_target_item_rejected(self, delete_tool, sandbox,
+                                                    bad_item, monkeypatch):
+        """`targets` 里的非字符串项必须**整条拒绝**，绝不 `str()` 之后照删（P5-A2 / D18）
+
+        原先 `raw.extend([str(t) for t in explicit if t])` 会把 `[["C:\\a.txt"]]` 变成
+        字符串 `"['C:\\\\a.txt']"` —— 一个"看起来像列表的路径"。危险不在于它通常会删不到
+        （那种假路径落在白名单外，被守卫拦下，用户听到的是"权限不够"，**真原因永不出现**），
+        而在于若 `str(t)` 恰好拼出一个**白名单内且真实存在**的名字，它就会安静地删掉那个文件。
+        凡"位置决定后果"的输入一律在入口拒绝。
+        """
+        import send2trash as s2t
+
+        deleted = []
+        monkeypatch.setattr(s2t, "send2trash", lambda p: deleted.append(p))
+        make_file(sandbox, "a.txt")
+
+        r = delete_tool.execute({"targets": [bad_item]})
+        assert r.success is False
+        assert deleted == [], f"{bad_item!r} 竟然触发了删除：{deleted}"
+        assert "没看懂" in r.summary or "哪些文件" in r.summary
+
+    def test_delete_non_string_item_error_names_the_problem(self, delete_tool, sandbox):
+        """报错要说出**真正的**原因，而不是让守卫去报"权限不够"
+
+        这是本条修复的核心价值：同一个畸形输入，修前用户听到的是
+        「删除失败了，可能是权限不够呢」（指向权限），修后是
+        「你要删的是哪些文件呀？我没看懂这一串。」—— 指向**输入**。
+        """
+        r = delete_tool.execute({"targets": [[str(sandbox / "a.txt")]]})
+        assert r.success is False
+        assert "权限" not in r.summary
+
+    def test_delete_preview_also_refuses_non_string_items(self, delete_tool, sandbox):
+        """预览与执行结论一致：都不对畸形 target 给出"找到 N 个文件"的假承诺"""
+        make_file(sandbox, "a.txt")
+        assert delete_tool.preview({"targets": [[str(sandbox / "a.txt")]]}) == ""
+        assert delete_tool.preview({"targets": [str(sandbox / "a.txt")]}) != ""
+
+    def test_delete_still_accepts_plain_string_items(self, delete_tool, sandbox,
+                                                    monkeypatch):
+        """反方向：正常字符串项一步不受影响（防"修到不能删"）"""
+        import send2trash as s2t
+
+        deleted = []
+        monkeypatch.setattr(s2t, "send2trash", lambda p: deleted.append(p))
+        a = make_file(sandbox, "a.txt")
+        b = make_file(sandbox, "b.txt")
+
+        r = delete_tool.execute({"targets": [str(a), str(b)]})
+        assert r.success is True and len(deleted) == 2
+
+    def test_delete_ignores_falsy_items_including_empty_string(self, delete_tool, sandbox,
+                                                              monkeypatch):
+        """空串 / `None` 这类"空项"仍按**缺省**处理（不算畸形）
+
+        `False` 会走畸形分支（它是非字符串值）；空串与 `None` 是"没填"，
+        与 `if t` 的旧行为一致 —— 这条用来钉住"我只收紧了非字符串，没有顺手改空值语义"。
+        """
+        import send2trash as s2t
+
+        deleted = []
+        monkeypatch.setattr(s2t, "send2trash", lambda p: deleted.append(p))
+        a = make_file(sandbox, "a.txt")
+
+        r = delete_tool.execute({"targets": [str(a), "", None]})
+        assert r.success is True and deleted == [str(a)]
+
     def test_delete_missing_file(self, delete_tool, sandbox):
         """目标不存在"""
         r = delete_tool.execute({"targets": [str(sandbox / "不存在.txt")]})
