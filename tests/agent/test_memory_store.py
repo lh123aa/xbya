@@ -150,6 +150,36 @@ class _NoDimModel:
         return [[1.0] * self.dim]
 
 
+class _NewNameModel:
+    """**只有新方法名** `get_embedding_dimension` 的模型（P4-C3 真模型的形态）
+
+    sentence-transformers 把 `get_sentence_embedding_dimension` 改名成
+    `get_embedding_dimension`，真模型加载时会打 FutureWarning（假模型测不出来）。
+    """
+
+    def __init__(self, dim=12) -> None:
+        self.dim = dim
+
+    def get_embedding_dimension(self):
+        return self.dim
+
+    def encode(self, texts):
+        return [[1.0] * self.dim for _ in texts]
+
+
+class _BothNameModel:
+    """两个方法名都在：用来钉住"新的优先" """
+
+    def get_embedding_dimension(self):
+        return 20
+
+    def get_sentence_embedding_dimension(self):
+        return 7
+
+    def encode(self, texts):
+        return [[1.0] * 20 for _ in texts]
+
+
 class _FakeModule:
     """假 sentence_transformers 模块"""
 
@@ -501,6 +531,30 @@ class TestSentenceTransformerEmbedder:
         emb = SentenceTransformerEmbedder(fallback_dim=6)
         emb.embed(["你好"])
         assert emb.dim == 6
+
+    def test_dim_getter_new_method_name(self, monkeypatch):
+        """**新**方法名 `get_embedding_dimension` 也要认（P4-C3 真模型实测暴露）
+
+        老版本 sentence-transformers 叫 `get_sentence_embedding_dimension`，
+        新版本改名为 `get_embedding_dimension`。只认老名字的话，将来它被删掉
+        就探不到维度 → `dim` 静默退回 `fallback_dim` → vec0 索引按**错误宽度**建表。
+        这条用"只有新名字"的假模型钉住新分支。
+        """
+        monkeypatch.setattr(
+            SentenceTransformerEmbedder, "_load_model", lambda self: _NewNameModel(dim=12)
+        )
+        emb = SentenceTransformerEmbedder(fallback_dim=3)
+        emb.embed(["你好"])
+        assert emb.dim == 12, "新方法名必须被采纳（不能退回 fallback）"
+
+    def test_dim_getter_prefers_new_name(self, monkeypatch):
+        """两个名字都在时**新的优先**（把优先级钉住，避免将来反过来）"""
+        monkeypatch.setattr(
+            SentenceTransformerEmbedder, "_load_model", lambda self: _BothNameModel()
+        )
+        emb = SentenceTransformerEmbedder(fallback_dim=3)
+        emb.embed(["你好"])
+        assert emb.dim == 20, "两个都在时应取新名字报告的 20，而不是旧名字的 7"
 
     def test_dim_getter_raises(self, monkeypatch):
         monkeypatch.setattr(

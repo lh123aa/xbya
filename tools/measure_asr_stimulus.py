@@ -91,12 +91,29 @@ def _asr(model_size: str):
 
 
 def _matches_phrase(text: str) -> bool:
-    """这段转写会不会被产品当成"确认/取消"？（用于测**误触发**）"""
+    """这段转写会不会被产品当成"确认/取消"？（用于测**误触发**）
+
+    ⚠️ **必须用产品的真实判据，不能自己写一套子串匹配**。
+    第一版这里写的是 `p in norm`（朴素子串），于是「你好呀」因为含单字「好」
+    被报成"被拉成确认语" —— 而那个缺陷在 P4-B5 已经被修掉了
+    （`_matches_any` 改成"确认从严、取消从宽"，单字必须整句成立）。
+    继续用旧判据会让测量工具**报出一个产品已经不会犯的错**，
+    并把它记在"解码偏置的副作用"账上（P4-C2 第一轮就是这么错的）。
+
+    教训与 §16.4 同源：测量工具必须调用**被测系统本身**的判定，而不是复刻一份。
+    """
+    from agent.providers.router.rule_router import (
+        CANCEL_PHRASES,
+        CONFIRM_PHRASES,
+        RuleRouter,
+    )
     from agent.text_norm import to_simplified
-    from agent.providers.router.rule_router import CANCEL_PHRASES, CONFIRM_PHRASES
 
     norm = to_simplified(text).lower()
-    return any(p.lower() in norm for p in list(CONFIRM_PHRASES) + list(CANCEL_PHRASES))
+    if not norm:
+        return False
+    return (RuleRouter._matches_any(norm, CANCEL_PHRASES)
+            or RuleRouter._matches_any(norm, CONFIRM_PHRASES, strict=True))
 
 
 #: 对照句：都不是确认/取消语，用来测"偏置会不会把别的话拉过去"

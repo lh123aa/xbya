@@ -172,8 +172,16 @@ class SentenceTransformerEmbedder(EmbedderService):
 
     @staticmethod
     def _detect_dim(model: Any) -> int:
-        """探测模型的输出维度；探不到时返回 0（由 dim 属性退回 fallback）"""
-        getter = getattr(model, "get_sentence_embedding_dimension", None)
+        """探测模型的输出维度；探不到时返回 0（由 dim 属性退回 fallback）
+
+        ⚠️ 方法名**换过**：老版本叫 `get_sentence_embedding_dimension`，
+        新版本改叫 `get_embedding_dimension`（真模型实测会打 FutureWarning，
+        P4-C3 加载真模型时才暴露出来 —— 假模块测不到这件事）。
+        两个名字都试，**新的优先**：只用老名字的话将来被删就探不到维度，
+        于是 `dim` 静默退回 `fallback_dim`，而 vec0 索引会按**错误宽度**建表。
+        """
+        getter = (getattr(model, "get_embedding_dimension", None)
+                  or getattr(model, "get_sentence_embedding_dimension", None))
         if getter is None:
             return 0
         try:
