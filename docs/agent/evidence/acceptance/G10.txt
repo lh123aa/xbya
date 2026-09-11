@@ -1,12 +1,12 @@
 # 关卡: G10 F7 真实生产力服务
 # 命令: C:\Python312\python.exe tools/verify_f7_real_services.py
-# 用时: 16.0s
+# 用时: 14.7s
 # 退出码: 0
 # 外部依赖: 是
 ------------------------------------------------------------------------
 ========================================================================
 F7 真实服务验证（translate / weather / reminder）
-时间: 2026-09-11 01:16:40
+时间: 2026-09-11 07:17:42
 ========================================================================
 
 [F7-a] 三个能力服务是否真的接上了
@@ -19,7 +19,7 @@ F7 真实服务验证（translate / weather / reminder）
 
 [F7-b] translate 走真实 LLM
 [PASS] translate 已注册
-  (2437ms) success=True
+  (871ms) success=True
   summary: "翻成英文是：The weather is nice today, let's go for a walk in the park."
 [PASS] translate 不再回'还没接上翻译能力'
 [PASS] 拿到了译文  → "The weather is nice today, let's go for a walk in the park."
@@ -28,12 +28,12 @@ F7 真实服务验证（translate / weather / reminder）
 
 [F7-c] weather 走真实 Open-Meteo
 [PASS] weather 已注册
-  (1246ms) success=True
-  summary: '上海，多云，22度，22~29度'
+  (1179ms) success=True
+  summary: '上海，阴，30度，22~30度'
 [PASS] weather 不再回'还没接上天气服务'
-  data: {'city': '上海', 'desc': '多云', 'temp': 22, 'temp_range': '22~29度'}
-[PASS] 温度在合理区间（真实观测值）  → 22度
-[PASS] 有天气描述  → 多云
+  data: {'city': '上海', 'desc': '阴', 'temp': 30, 'temp_range': '22~30度'}
+[PASS] 温度在合理区间（真实观测值）  → 30度
+[PASS] 有天气描述  → 阴
 [PASS] 有城市名  → 上海
 [PASS] 未知城市返回可读失败  → 没查到天气信息呢
 [PASS] 没说城市时如实失败（不做 IP 定位）  → 没查到天气信息呢
@@ -41,9 +41,9 @@ F7 真实服务验证（translate / weather / reminder）
 [F7-d] reminder 到点真的发事件（「不撒谎」的直接证据）
 [PASS] reminder 已注册
 [PASS] 提醒设置成功  → 好的，马上我会提醒你喝水
-  提醒 id=rem-7 到期时间=马上
+  提醒 id=rem-13 到期时间=马上
 [PASS] 提醒进入待触发队列  → pending=1
-  收到事件: {'reminder_id': 'rem-7', 'what': '喝水', 'text': '提醒你喝水'}
+  收到事件: {'reminder_id': 'rem-13', 'what': '喝水', 'text': '提醒你喝水'}
 [PASS] 到点发出了 reminder.due 事件（不再是空承诺）
 [PASS] 事件带对了提醒内容  → 喝水
 [PASS] 事件带可播报文案  → 提醒你喝水
@@ -52,9 +52,9 @@ F7 真实服务验证（translate / weather / reminder）
 
 [F7-e] 提醒跨进程不丢（D13：关掉程序再打开，提醒还在）
 [PASS] 提醒状态文件路径可解析  → data\agent_reminders.json
-  进程A add   : exit=0 已设置 rem-8 | 30分钟后 | 跨进程喝水
-[PASS] 进程A 设置提醒成功  → 已设置 rem-8 | 30分钟后 | 跨进程喝水
-  进程B list  : exit=0 待提醒 1 条 / rem-8 | 30分钟后 | 跨进程喝水
+  进程A add   : exit=0 已设置 rem-14 | 30分钟后 | 跨进程喝水
+[PASS] 进程A 设置提醒成功  → 已设置 rem-14 | 30分钟后 | 跨进程喝水
+  进程B list  : exit=0 待提醒 1 条 / rem-14 | 30分钟后 | 跨进程喝水
 [PASS] 进程B（另起的进程）读得到那条提醒 —— 重启不丢  → 读到了
   进程C clear : exit=0 共取消 1 条
 [PASS] 进程C 清理测试提醒成功
@@ -72,5 +72,3 @@ F7 结果：32/32 通过，0 失败，0 跳过
 未找到接口 VectorDBEngine 的实现，使用空对象
 C:\Python312\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   import pkg_resources
-API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `on_demand` on tokens per day (TPD): Limit 200000, Used 199677, Requested 816. Please try again in 3m32.976s. Need more tokens? Upgrade to Dev Tier today at https://c
-主提供商失败，降级到备用模型: nvidia/nemotron-3-super-120b-a12b:free

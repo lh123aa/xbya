@@ -77,7 +77,10 @@ P4-C3：sentence-transformers 真模型验证（此前从未下载过）
 
 【一】命令与结果：**8/8 通过**
 --------------------------------------------------------------
-命令：`python tools/_tmp_c3_st_real.py`（`SentenceTransformerEmbedder("all-MiniLM-L6-v2")`）
+命令：`python docs/agent/evidence/p4/_tmp_c3_st_real.py`
+（原放在 `tools/` 下，**被 G13「工作区干净」检查抓出来后归档到这里** ——
+那条检查是对的：`tools/` 是运维脚本目录，临时脚本不该留在那儿。
+归档而不是删除，是为了让这条测量可复跑、且证据里的路径指向真实存在的文件。）
 
 | 检查 | 结果 |
 |------|------|
