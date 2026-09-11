@@ -1,6 +1,6 @@
 # 关卡: G4 P1 端到端验收
 # 命令: C:\Python312\python.exe tools/p1_acceptance_smoke.py
-# 用时: 1.7s
+# 用时: 1.2s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -9,7 +9,7 @@
 ======================================================================
 
 装配结果：tools=21 router=HybridRouter enabled=True
-白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_accept_mdzhvvpn']
+白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_accept_pri785tk']
 
 [PASS] 工具集装配  → 21 个工具
 [PASS] Agent 层已启用
@@ -18,10 +18,10 @@
 [PASS] file_search 返回结果  → 找到「合同_2025.pdf」，5字节，9月11号
 [PASS] 结果为成功状态
 [PASS] 工具识别正确  → file_search
-[PASS] 总延迟 < 3s  → 25ms
+[PASS] 总延迟 < 3s  → 24ms
 
 [场景 2] 只读指令：系统状态
-[PASS] system_info 返回结果  → CPU 用了 55.4%，内存用了 83.0%，电量 0%，磁盘用了 90.9%
+[PASS] system_info 返回结果  → CPU 用了 9.8%，内存用了 65.0%，电量 0%，磁盘用了 90.9%
 
 [场景 3] 危险指令：删除 → 确认 → 取消（不应落盘）
 [PASS] 发出确认请求  → 找到 1 个文件（截图_01.png，共 5 B）。确定要移到回收站吗？
@@ -38,7 +38,7 @@
 [PASS] 白名单外路径被拦截  → 这个位置我不能动哦，只能操作：C:\Users\49046\AppData\Local\Temp\x
 
 [场景 6] 延迟与统计
-  pipeline.stats() = {'commands': 7, 'tool_calls': 3, 'chats': 0, 'rejected': 1, 'confirms': 2, 'result_p50_ms': 13.3, 'result_p95_ms': 721.5}
+  pipeline.stats() = {'commands': 7, 'tool_calls': 3, 'chats': 0, 'rejected': 1, 'confirms': 2, 'result_p50_ms': 10.1, 'result_p95_ms': 562.7}
 [PASS] 指令计数正确  → commands=7
 [PASS] 确认计数正确  → confirms=2
 

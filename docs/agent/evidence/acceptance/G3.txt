@@ -1,6 +1,6 @@
 # 关卡: G3 覆盖率（项目口径 100%）
 # 命令: C:\Python312\python.exe -m pytest tests/agent tests/kernel -q --cov=core.kernel --cov=agent --cov=services.ack_cache --cov-report=term-missing
-# 用时: 67.4s
+# 用时: 45.6s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -122,4 +122,4 @@ core\kernel\service.py                                  36      0   100%
 services\ack_cache.py                                  178      0   100%
 ----------------------------------------------------------------------------------
 TOTAL                                                 7238      0   100%
-2379 passed, 1 skipped, 1 warning in 62.54s (0:01:02)
+2379 passed, 1 skipped, 1 warning in 43.22s

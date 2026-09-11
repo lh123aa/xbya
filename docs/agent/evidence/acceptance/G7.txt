@@ -1,6 +1,6 @@
 # 关卡: G7 G0 内核示例可运行
 # 命令: C:\Python312\python.exe docs/agent/examples/kernel_demo.py
-# 用时: 0.3s
+# 用时: 0.1s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -116,7 +116,7 @@ Python：3.12.8    标准库 + core/kernel，无第三方依赖
 ========================================================================
   [5/5] 插件加载器 PluginLoader：配置解析 / 拓扑排序 / 加载 / 卸载 / 失败回滚
 ========================================================================
-  [NOTE] 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_bc_v3xa7
+  [NOTE] 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_2b7vh6m5
   [OK]   parse_config() 保持配置书写顺序（app 在前）
   [OK]   resolve_order() 拓扑排序把被依赖的 base_plugin 排到前面
        - 假插件 base_plugin 已加载：注册 base_service
@@ -155,5 +155,5 @@ Python：3.12.8    标准库 + core/kernel，无第三方依赖
   运行中的观察项（3 条，未断言、未改内核）：
     1. Context.dispose() 之后 probe.disposed = 0：provide() 的 disposer 只把服务从表里摘除，不会调用实现对象的 dispose()。core/kernel/service.py 中 Disposable 的 docstring 声称「context 清理时会自动调用其 dispose()」，与实现不一致 —— 资源释放得由插件自己挂到上下文（例如插件入口返回 disposer，由 PluginLoader 收编，见第 5 节）。此处只报告，未改动内核。
     2. ctx.dispose() 后 ctx.registry('tool') 返回的是新实例（同一实例=False，旧表仍有 1 项）：dispose() 只是丢弃了注册表引用，不清空表内已注册项。此处只报告，未改动内核。
-    3. 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_bc_v3xa7
+    3. 假插件写在临时目录（运行结束自动删除，不进仓库）：C:\Users\49046\AppData\Local\Temp\kernel_demo_plugins_2b7vh6m5
 kernel_demo: 113/113 通过

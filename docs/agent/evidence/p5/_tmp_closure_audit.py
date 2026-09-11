@@ -6,7 +6,7 @@
 
 1. 逐条列出 `tasks-p5.json` 里每个任务的终态 + 证据（含"证据是否真实存在"）；
 2. 把终态分布数出来（四种终态，没有第五种）；
-3. 复跑 G13，把 20 项逐条输出写进证据；
+3. 复跑 G13，把逐条输出写进证据（项数从输出里解析，不手写）；
 4. 扫一遍文档里是否还残留"以后再说 / 待定 / 后续再看"这类**非终态**措辞。
 
 用法：python docs/agent/evidence/p5/_tmp_closure_audit.py
@@ -115,14 +115,22 @@ w("## 四、门禁原样复跑")
 w("")
 
 # 1) G13
-w("### G13 仓库卫生（20 项）")
+#
+# 标题里的项数**从输出里读**，不手写：这里原先写死「20 项」，
+# 而 G13 本轮已经涨到 22 项 —— 一个专门做"逐条核对"的脚本，
+# 自己的小标题却在手抄数字，与它要防的那类事同族。
+w("### G13 仓库卫生（项数从输出里读出来，不手写）")
 w("")
 w("```")
 for script in ("tools/check_repo_hygiene.py",):
     proc = subprocess.run([sys.executable, script], cwd=ROOT, capture_output=True,
                           text=True, encoding="utf-8", errors="replace")
-    w((proc.stdout or "").rstrip())
+    out = (proc.stdout or "").rstrip()
+    w(out)
     w(f"[exit] {proc.returncode}")
+    m = re.search(r"仓库卫生自检：(\d+)/(\d+)", out)
+    if m:
+        w(f"[项数] {m.group(2)} 项（本行由脚本从上面那段输出里解析，不是手抄）")
 w("```")
 w("")
 
