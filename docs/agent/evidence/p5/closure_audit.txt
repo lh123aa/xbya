@@ -1,6 +1,6 @@
 # P5 收口审计（P5-AUDIT-CLOSURE）
 
-生成时间：2026-09-11 09:49:50
+生成时间：2026-09-11 09:56:16
 
 > 本文件是**可复跑**的：`python docs/agent/evidence/p5/_tmp_closure_audit.py`
 > 它不产生结论，只逐条把事实列出来 —— 结论要么被这些行支持，要么不成立。
@@ -62,10 +62,10 @@
 ========================================================================
 [PASS] 在真正的 git 工作区内  → rev-parse → 'true'
 [PASS] `.git` 是目录（不是 worktree 指针文件）
-[PASS] 至少有一次提交  → 22 个提交
+[PASS] 至少有一次提交  → 24 个提交
 [PASS] 没有遗留的 stash  → 空
-[FAIL] 工作区干净（排除验收证据目录）  → 2 项未提交：[' M AGENTS.md', ' M docs/agent/tasks-p5.json']
-[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 235
+[FAIL] 工作区干净（排除验收证据目录）  → 1 项未提交：[' M AGENTS.md']
+[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 238
 [PASS] 没有被禁文件进入版本库  → 全部合规
 [PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
 [PASS] config.example.yaml 存在
