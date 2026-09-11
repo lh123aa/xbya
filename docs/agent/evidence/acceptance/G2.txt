@@ -1,6 +1,6 @@
 # 关卡: G2 全量回归
 # 命令: C:\Python312\python.exe -m pytest tests/ -q
-# 用时: 64.2s
+# 用时: 62.6s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -40,7 +40,7 @@
 ........................................................................ [ 92%]
 ........................................................................ [ 95%]
 ........................................................................ [ 98%]
-.................................................                        [100%]
+...................................................                      [100%]
 ============================== warnings summary ===============================
 tests/agent/test_integration.py::TestPetWindowBridge::test_agent_disabled_without_app
   C:\Python312\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
@@ -55,4 +55,4 @@ conftest.py:113
     if isinstance(obj, HotkeyManager):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-2640 passed, 1 skipped, 3 warnings in 61.46s (0:01:01)
+2642 passed, 1 skipped, 3 warnings in 59.83s

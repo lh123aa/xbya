@@ -1,0 +1,142 @@
+P4-B3 证据：外部依赖退化可见（429 配额 + 引擎能力）
+======================================================================
+日期：2026-09-11
+任务：docs/agent/tasks-p4.json §P4-B3
+生成方式：本文件由 tools/_tmp_b3_evidence.py 的真实输出拼成（不是复述结论）
+复跑命令：python tools/_tmp_b3_evidence.py
+
+【零】为什么现在才写这份证据
+--------------------------------------------------------------
+P4-B3 的代码与用例在提交 cd93145 里就交付了，任务也标了 done，
+但**声明的证据文件 docs/agent/evidence/p4/quota_visible.txt 从未写过** ——
+本轮做"声明路径 vs 实际文件"审计时才发现（13 项里 6 条对不上）。
+写这份证据的过程中**又抓到一个真实缺陷**（见第四节），
+所以这次补写不是补手续，是真的又查了一遍。
+
+【一】验收面的一处修正（沿用执行时的结论）
+--------------------------------------------------------------
+`p4-plan.md` 原写"在 `/status` 里可见"，但**项目里没有 `/status` 命令** ——
+那句是从 F 系列文档继承下来的想象面。真实存在且可断言的入口是
+**`app.get_status()`**，所以验收改到它上面。
+
+【二】逐条实测（六条验收条件）
+--------------------------------------------------------------
+==============================================================================
+P4-B3 证据：外部依赖退化可见（429 配额 + 引擎能力）
+==============================================================================
+
+[1] 可见：mock 一次 429
+  quota_blocked                                True
+  quota_hits                                   1
+  last_quota_at (>0 表示记了时间)                    True
+  last_error                                   '429 配额/限流'
+  → PASS：429 被记成「当前被限流」并带时间戳
+
+[2] 复位：随后一次成功调用
+  quota_blocked                                False
+  quota_hits（历史累计，应保持 1）                       1
+  last_error                                   ''
+  ok_calls                                     1
+  → PASS：quota_blocked 语义是「现在是否被限流」，历史次数看 quota_hits
+
+[3] 不误报（性质）：HTTP 500 与连接异常不得报成配额问题
+  HTTP 500 → quota_blocked                     False
+  HTTP 500 → last_error                        'HTTP 500'
+  连接异常 → quota_blocked                         False
+  连接异常 → last_error                            '调用异常: ConnectionError'
+  → PASS：两者都不被报成配额，且异常只记类型名（不含 URL）
+
+[4] 不泄密：状态面不含 api_key
+  状态字符串里是否出现 key                               False
+  → PASS：它会被打进日志/状态输出，必须不含密钥
+
+[5/6] 应用状态面：get_status()['llm']
+  initialize()                                 True
+  get_status() 顶层键                             ['agent', 'hardware', 'llm', 'loaded_plugins', 'performance_mode', 'plugins', 'running']
+  已加载插件                                        ['asr', 'tts', 'llm', 'embedding', 'vector_db', 'voiceprint', 'file_monitor', 'avatar']
+  llm 键                                        ['available', 'engine', 'model', 'quota', 'tool_calling']
+  llm.engine                                   UniversalLLM
+  llm.model                                    openai/gpt-oss-120b
+  llm.available                                True
+  llm.tool_calling                             True
+  llm.quota                                    {'quota_blocked': False, 'quota_hits': 0, 'last_quota_at': 0.0, 'last_error': '', 'ok_calls': 0, 'fallback_configured': True}
+  → PASS：429 配额与 chat_with_tools 能力都在状态里可查
+
+     健壮性：让插件自报异常，get_status() 不得崩
+     （**这条原本是 FAIL** —— 见下方「本轮补写证据时抓到的缺陷」一节）
+  方法抛异常 → 未崩，plugins.llm                       {'available': None, 'error': 'RuntimeError: boom'}
+  方法抛异常 → llm                                  {'engine': '_BrokenMethod', 'model': 'broken', 'available': None, 'tool_calling': False, 'quota': {'error': 'RuntimeError: boom'}}
+  → PASS：如实报 None/error，不抛异常
+  属性访问也抛 → 未崩，plugins.llm                      {'available': None, 'error': 'RuntimeError: boom'}
+  属性访问也抛 → llm                                 {'engine': None, 'model': None, 'available': None, 'tool_calling': None, 'quota': None, 'error': 'RuntimeError: boom'}
+  → PASS：如实报 None/error，不抛异常
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.8)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+
+==============================================================================
+P4-B3 六条验收条件全部实测通过
+==============================================================================
+API 错误: 429 - {"error":"rate limited"}
+API 错误: 500 - server error
+API 调用异常: http://secret-host
+插件不存在: embed_anything
+   embedding 加载失败，使用空对象
+未找到接口 EmbeddingEngine 的实现，使用空对象
+插件不存在: leann
+   vector_db 加载失败，使用空对象
+未找到接口 VectorDBEngine 的实现，使用空对象
+
+【三】B3 相关用例
+--------------------------------------------------------------
+..................                                                       [100%]
+============================== warnings summary ===============================
+tests/test_app.py::TestXiaoyiApp::test_get_status_exposes_llm_capability_and_agent_summary
+
+tests/test_app.py::TestXiaoyiApp::test_get_status_exposes_llm_capability_and_agent_summary
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+18 passed, 10 deselected, 2 warnings in 6.48s
+
+【四】★ 补写证据时抓到的真实缺陷：`get_status()` 会被"自报异常的插件"打崩
+--------------------------------------------------------------
+`p4-plan.md` 的验收条件里有一条：**"状态面健壮 —— 插件自报异常时状态查询不得崩
+（如实报 None / error）"**。原实现只做到了一半：
+
+- `llm_capability()` **做了**保护（`try/except` 包住 `is_available()` 与 `quota_stats()`）；
+- 但 `get_status()` 里插件状态循环那一行 `plugin.is_available()` **完全没有保护**。
+
+而 `tests/test_app.py::test_llm_capability_survives_broken_plugin` 只调了
+`llm_capability()` —— 于是那条用例**绿着**，而 `get_status()` 用**同款桩**直接抛
+`RuntimeError: boom`。实测复现（`tools/_tmp_b3_getstatus.py`，修复前）：
+
+```
+  **崩了** 方法抛异常（同款桩）      RuntimeError: boom
+  **崩了** 属性访问也抛（敌意桩）     RuntimeError: boom
+  对照：llm_capability() 单独调     OK -> available=None quota_error='RuntimeError: boom'
+```
+
+修法两条：
+1. `get_status()` 的插件状态循环改为 `try/except`，如实记
+   `{"available": None, "error": "RuntimeError: boom"}`；
+2. 新增 `_safe_hasattr()` —— Python 的 `hasattr` **只吞 `AttributeError`**，
+   若 `__getattr__`/property 抛别的异常，`hasattr` 会把异常原样抛出，
+   它本身就是帮凶；`llm_capability()` 里的两处 `hasattr` 也一并加固。
+3. `status["llm"] = self.llm_capability()` 外面再包一层 —— 敌意桩仍可能从那里抛出来；
+   状态面宁可少给一个字段，也不能整个查不出来。
+
+> **还有一处是修的过程中才发现的**：第一版修法用
+> `available = plugin.is_available() if _safe_hasattr(...) else True`，
+> 结果敌意桩被报成 **`available: True`** —— 因为 `hasattr` 吞掉异常后，
+> **"没有这个属性"与"取属性时炸了"变得无法区分**。
+> 改为 `getattr(plugin, "is_available", None)`：默认值只在"确实没有"时生效，
+> 取属性抛异常会走进 `except`。**报"可用"比报"不知道"危险得多**，
+> 这条是我自己的测试（`test_get_status_survives_hostile_plugin`）逼出来的。
+
+新增用例（`tests/test_app.py`）：
+- `test_get_status_survives_broken_plugin_methods` —— 同款桩调 `get_status()` 不得崩
+- `test_get_status_survives_hostile_plugin` —— 属性访问也抛的敌意桩不得崩，
+  且**不得被报成 available=True**
+
+【五】门禁
+--------------------------------------------------------------
+见提交信息（P4-G1 全量回归 / P4-G2 覆盖率 / G13 仓库卫生）。

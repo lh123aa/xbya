@@ -27,6 +27,7 @@ P4-A1 发现仓库**根本没有版本控制**（`.git` 是指向已删除父仓
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -270,6 +271,45 @@ def main() -> int:
         check(ignored == want_ignored,
               f"忽略规则：{path} {'应被忽略' if want_ignored else '不应被忽略'}",
               "被忽略" if ignored else "未忽略")
+
+    # ── 8. 声明的证据路径必须真实存在（防"任务标 done 但证据没写"）──
+    #
+    # 为什么加这一条：P4 收口轮做审计时发现 `tasks-p4.json` 里 13 项有 **6 条**
+    # evidence 路径对不上 —— 3 条从来没写过（A3/B3/B4）、3 条路径过时（C2/C3/C4）。
+    # 而"结论留原始输出到 evidence/"是本项目的硬约定：
+    # 一个 done 的任务配一个不存在的证据文件，等于**约定只被纸面满足**。
+    # 这类事靠人记得去核对一定会再犯，所以做成关卡。
+    #
+    # 只查"路径存在"，不查"内容是否充分" —— 后者需要人判，混进来会让关卡变得
+    # 又重又不可信（本项目的原则：关卡要么确定，要么别放）。
+    for task_file in ("tasks.json", "tasks-p2.json", "tasks-p3.json", "tasks-p4.json"):
+        tf = ROOT / "docs" / "agent" / task_file
+        if not tf.exists():
+            continue
+        try:
+            data = json.loads(tf.read_text(encoding="utf-8"))
+        except Exception as e:
+            check(False, f"{task_file} 可解析", f"{type(e).__name__}: {e}")
+            continue
+        missing_ev, checked = [], 0
+        for t in (data.get("tasks") or []):
+            ev = t.get("evidence")
+            if not ev:
+                continue
+            for one in (ev if isinstance(ev, list) else [ev]):
+                checked += 1
+                if not (ROOT / one).exists():
+                    missing_ev.append(f"{t.get('id')}→{one}")
+        if checked == 0:
+            # **不计入通过数**：一个"永远绿"的空转检查正是本项目要防的东西
+            # （tasks.json / tasks-p2.json / tasks-p3.json 都没有 tasks 数组）。
+            # 说清它是"没东西可查"，而不是"查过了没问题"。
+            print(f"[跳过] {task_file} 里没有带 evidence 的任务，无可查")
+            continue
+        check(not missing_ev,
+              f"{task_file} 里声明的证据路径都存在",
+              f"查了 {checked} 条" if not missing_ev
+              else f"缺 {len(missing_ev)} 条：{missing_ev}")
 
     ok = sum(1 for p, _ in results if p)
     bad = sum(1 for p, _ in results if not p)

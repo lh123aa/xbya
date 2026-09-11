@@ -206,6 +206,51 @@ class TestXiaoyiApp:
         assert cap["available"] is None, "自报异常时如实报 None，不假装可用"
         assert "error" in (cap["quota"] or {}), "配额查询异常要如实记录"
 
+    def test_get_status_survives_broken_plugin_methods(self):
+        """**回归保护**：`get_status()` 也必须扛住自报异常的插件
+
+        原先 `get_status()` 里有一行**独立且无保护**的
+        `plugin.is_available()`（插件状态循环里），而上面那条用例只调了
+        `llm_capability()` —— 于是"插件自报异常时状态查询不得崩"这条验收条件
+        对 `get_status()` **并不成立**：用**同款桩**调 `get_status()` 直接抛
+        `RuntimeError: boom`（本轮写证据时实测发现）。
+        状态面是排障入口，它自己不能成为新的故障点。
+        """
+
+        class _BrokenLLM:
+            model = "broken"
+
+            def is_available(self):
+                raise RuntimeError("boom")
+
+            def quota_stats(self):
+                raise RuntimeError("boom")
+
+        self.app.plugins["llm"] = _BrokenLLM()
+        st = self.app.get_status()          # 不得抛异常
+
+        entry = st["plugins"]["llm"]
+        assert entry["available"] is None, "无法判断要报 None，不能假装可用"
+        assert "RuntimeError" in entry["error"], "异常类型要如实记下来"
+        assert st["llm"]["available"] is None
+
+    def test_get_status_survives_hostile_plugin(self):
+        """更敌意的桩：连**属性访问**都抛（`__getattr__` 抛非 AttributeError）
+
+        `hasattr` 只吞 `AttributeError`，所以它在这种对象上会原样把异常抛出来。
+        状态查询依然必须能查 —— 少给字段可以，整个查不出来不行。
+        """
+
+        class _HostileLLM:
+            def __getattr__(self, name):
+                raise RuntimeError("boom")
+
+        self.app.plugins["llm"] = _HostileLLM()
+        st = self.app.get_status()          # 不得抛异常
+        assert st["plugins"]["llm"]["available"] is None
+        assert st["llm"]["available"] is None
+        assert "RuntimeError" in st["llm"]["error"]
+
     def test_agent_layer_actually_assembles(self):
         """Agent 层必须真的装配成功，而不是被 except 静默降级
 

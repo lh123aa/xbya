@@ -63,6 +63,24 @@ def release_single_instance_lock():
             pass
 
 
+def _safe_hasattr(obj: Any, name: str) -> bool:
+    """`hasattr` 的加固版：连"属性访问本身抛别的异常"也吞掉
+
+    Python 的 `hasattr` **只吞 `AttributeError`** —— 若对象的 `__getattr__`
+    或某个 property 抛的是 `RuntimeError` 之类，`hasattr` 会把异常原样抛出去。
+
+    为什么这里必须加固：P4-B3 的验收条件之一是
+    **"插件自报异常时状态查询不得崩（如实报 None / error）"**。
+    实测（`tools/_tmp_b3_getstatus.py`）一个 `__getattr__` 抛 `RuntimeError` 的插件桩
+    能让整个 `get_status()` 崩掉，而 `hasattr` 正是帮凶之一。
+    状态面是排障入口，**它自己不能成为新的故障点**。
+    """
+    try:
+        return hasattr(obj, name)
+    except Exception:
+        return False
+
+
 class XiaoyiApp:
     """小忆应用主控类"""
     
@@ -840,7 +858,7 @@ class XiaoyiApp:
             available = None
 
         quota: Optional[Dict[str, Any]] = None
-        if hasattr(llm, "quota_stats"):
+        if _safe_hasattr(llm, "quota_stats"):
             try:
                 quota = llm.quota_stats()
             except Exception as e:
@@ -851,7 +869,7 @@ class XiaoyiApp:
             "model": getattr(llm, "model", None),
             "available": available,
             # None = 无法判断；False = **明确不具备**（此时路由兜底不可用）
-            "tool_calling": hasattr(llm, "chat_with_tools"),
+            "tool_calling": _safe_hasattr(llm, "chat_with_tools"),
             "quota": quota,
         }
 
@@ -870,9 +888,24 @@ class XiaoyiApp:
                            "voiceprint", "file_monitor", "avatar"]:
             plugin = self.plugins.get(plugin_type)
             if plugin:
-                status["plugins"][plugin_type] = {
-                    "available": plugin.is_available() if hasattr(plugin, 'is_available') else True
-                }
+                # 插件自报异常时**如实记下来**，但绝不让状态查询整个崩掉（P4-B3）。
+                # 实测：`plugin.is_available()` 抛异常（以及与它相邻的 `hasattr`
+                # 遇到抛非 AttributeError 的 `__getattr__`）会让 get_status() 直接抛出去，
+                # 而 `tests/test_app.py` 里那条"插件自报异常不该炸状态查询"的用例
+                # 只覆盖了 `llm_capability()`，没覆盖这里 —— 洞就在这里。
+                try:
+                    # 用 `getattr(..., None)` 而不是 `hasattr` ：
+                    # `hasattr` 吞掉异常后，**"没有这个属性"与"取属性时炸了"变得无法区分**，
+                    # 于是敌意插件会被报成 `available: True`（实测踩到过 —— 那是在撒谎）。
+                    # getattr 的默认值只在"确实没有"时生效；取属性抛异常会走到 except。
+                    getter = getattr(plugin, "is_available", None)
+                    available = bool(getter()) if callable(getter) else True
+                    status["plugins"][plugin_type] = {"available": available}
+                except Exception as e:
+                    status["plugins"][plugin_type] = {
+                        "available": None,          # None = 无法判断（不假装可用）
+                        "error": f"{type(e).__name__}: {e}",
+                    }
                 status["loaded_plugins"].append(plugin_type)
         
         # 硬件状态
@@ -886,7 +919,14 @@ class XiaoyiApp:
             }
 
         # LLM 能力与外部依赖状态（P4-B3）：把"配额挡住了"与"引擎不会工具调用"摊开
-        status["llm"] = self.llm_capability()
+        # 再包一层：`llm_capability()` 自己也会去碰插件对象，敌意桩仍可能从那里抛出来。
+        # 状态面宁可少给一个字段，也不能整个查不出来。
+        try:
+            status["llm"] = self.llm_capability()
+        except Exception as e:
+            status["llm"] = {"engine": None, "model": None, "available": None,
+                             "tool_calling": None, "quota": None,
+                             "error": f"{type(e).__name__}: {e}"}
 
         # Agent 层摘要（只给关键字段，不把整棵 stats 树塞进状态）
         if self.agent_stack is not None:

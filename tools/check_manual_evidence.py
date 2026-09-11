@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -55,16 +54,130 @@ VERDICT_WORDS = DONE_WORDS + NOT_DONE_WORDS
 #: 造完差点忘删 —— 而"目录里躺着一批看起来齐全的假证据"正是最危险的状态：
 #: 谁跑一下校验都得到绿色，于是没有人再去做真验收。
 #: 所以：占位内容一律报红，且**不计入证据数**。
-PLACEHOLDER_MARKERS = ("假证据", "占位", "self-test", "selftest", "placeholder", "TODO")
+#:
+#: ⚠️ **勘误（P4 收口轮）**：上一条注释写着"`M1 ... | 通过 | 自检` 一开始被当成已填结论"，
+#: 读起来像"已经修好了"。但审计发现「自检」**根本不在下面这个元组里** ——
+#: 也就是说那条假结论**至今照样会被算成已填**（实测：匹配到 `M1 搜索文件 | 通过`，
+#: 占位词一个都不命中 ⇒ 判为已填）。文档承诺与代码行为不一致，属于"纸面修好了"。
+#: 现已补上「自检/示例/样例/模板」，并用 `--self-test` 把这条钉住。
+PLACEHOLDER_MARKERS = ("假证据", "占位", "self-test", "selftest", "placeholder", "TODO",
+                       "自检", "示例", "样例", "模板")
 
 #: 小于这个字节数的证据文件会被提醒"可能是空文件/占位"
 SUSPICIOUS_BYTES = 200
 
 
+def _is_placeholder(name: str, head: str, size: int) -> bool:
+    """这个文件算不算"占位/假证据"？（按文件名 + 开头内容 + 体积判断）
+
+    抽成函数是为了能被 `--self-test` 直接验证 —— 否则"它会报红"这句话没法复现。
+    """
+    low = (name + " " + head).lower()
+    return (any(m.lower() in low for m in PLACEHOLDER_MARKERS)
+            or size < SUSPICIOUS_BYTES)
+
+
+def _has_real_verdict(code: str, text: str) -> bool:
+    """`结论.md` 里这一条是否已经写了**真的判定**（而不是"未做"/占位/示例）
+
+    两种**不算**的情况，都是实测踩出来的：
+      ① 带占位词的行（`| 通过 | 自检`、`| 通过 | 示例`）—— 假结论能把校验刷绿；
+      ② 模板原样保留的 `未做` —— 照抄模板等于没填。
+    注意 `不通过` 算**已填**：本脚本查的是"做完没有"，一条诚实的"不通过"是完整结论。
+
+    ⚠️ **为什么按"整行"判，而不是用一条正则去匹配"编号…判定词"**：
+    原先的实现是 `^\\s*M1\\b.*?(不通过|部分通过|通过)`，`.*?` 是**非贪婪**的，
+    所以匹配到的 `body` 只到 `通过` 为止 —— `| 自检` 根本不在 `body` 里，
+    占位词检查**永远看不到它**。
+    后果：文档里写着"`M1 ... | 通过 | 自检` 这个假结论已经修掉了"，
+    实际上它**至今照样被算成已填**（`--self-test` 一跑就露：判定=True、期望=False）。
+    也就是说"修的方式"本身是坏的 —— 这是本轮自检抓到的第 3 个同类问题。
+    现在改成：取出整行 → 编号开头且后面不是字母数字 → 整行查判定词与占位词。
+    """
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith(code):
+            continue
+        rest = line[len(code):]
+        # 避免 `M1` 匹配到 `M10`
+        if rest[:1].isalnum() or rest[:1] == "_":
+            continue
+        if not any(w in line for w in DONE_WORDS):
+            continue
+        if any(k in line for k in NOT_DONE_WORDS):
+            continue
+        if any(k.lower() in line.lower() for k in PLACEHOLDER_MARKERS):
+            continue
+        return True
+    return False
+
+
+def self_test() -> int:
+    """反方向验证：证明这个校验器**既会报红、也不乱报红**
+
+    为什么不造真文件来试：第一版就是这么干的，结果一批假证据躺在**真证据目录**里，
+    差点让任何人跑一下校验都拿到绿色。所以自检只跑**纯函数判定**，不碰真实目录。
+    """
+    print("=" * 72)
+    print("自检：判定逻辑两个方向都要成立")
+    print("=" * 72)
+
+    verdict_cases = [
+        # (说明, 结论文本, 期望判定)
+        ("真人写了通过", "M1 搜索文件 | 通过 | 现象：1.2s 出结果", True),
+        ("真人写了不通过（诚实的失败也是完整结论）", "M1 搜索文件 | 不通过 | 3.4s", True),
+        ("部分通过", "M1 搜索文件 | 部分通过 | 有时超时", True),
+        ("模板原样：未做", "M1 搜索文件 | 未做 | ", False),
+        ("★ 假结论 + 自检标记", "M1 搜索文件 | 通过 | 自检", False),
+        ("★ 假结论 + 示例标记", "M1 搜索文件 | 通过 | 示例", False),
+        ("★ 假结论 + 模板标记", "M1 搜索文件 | 通过 | 模板", False),
+        ("根本没有这一行", "M2 删除确认 | 未做 | ", False),
+        ("空文本", "", False),
+        ("只有编号没有判定词", "M1 搜索文件 | 现象写这里 | ", False),
+        ("占位词在别的编号行上，不应误伤本行", "M1 搜索文件 | 通过 | 真实截图\nG1 | 通过 | 示例", True),
+    ]
+    bad = 0
+    for label, text, expect in verdict_cases:
+        got = _has_real_verdict("M1", text) if "M1" in text else _has_real_verdict("M1", text)
+        ok = got is expect
+        if not ok:
+            bad += 1
+        print(f"  {'PASS' if ok else 'FAIL'}  {label:<42} 判定={got} 期望={expect}")
+
+    file_cases = [
+        # (说明, 文件名, 开头内容, 体积, 期望"是占位")
+        ("正常证据文件", "M1-搜索气泡.png", "", 5000, False),
+        ("文件名带假证据", "M2-假证据.txt", "x" * 300, 300, True),
+        ("内容带占位", "M3-打断.txt", "这是占位内容", 300, True),
+        ("内容带 TODO", "M4-降级.txt", "TODO 待补", 300, True),
+        ("体积过小（疑似空文件）", "M5-边界.txt", "ok", 50, True),
+    ]
+    for label, name, head, size, expect in file_cases:
+        got = _is_placeholder(name, head, size)
+        ok = got is expect
+        if not ok:
+            bad += 1
+        print(f"  {'PASS' if ok else 'FAIL'}  {label:<42} 占位={got} 期望={expect}")
+
+    print("-" * 72)
+    total = len(verdict_cases) + len(file_cases)
+    if bad:
+        print(f"自检失败：{total - bad}/{total} 通过，{bad} 项不符")
+        return 1
+    print(f"自检通过：{total}/{total} —— 会报红，也不乱报红")
+    print("=" * 72)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="人工验收证据校验（P4-A3）")
     ap.add_argument("--list", action="store_true", help="只列出已收到的证据文件")
+    ap.add_argument("--self-test", action="store_true",
+                    help="反方向验证判定逻辑（不碰真实证据目录，可随时复跑）")
     args = ap.parse_args()
+
+    if args.self_test:
+        return self_test()
 
     print("=" * 72)
     print("人工验收证据校验（P4-A3）")
@@ -90,8 +203,7 @@ def main() -> int:
                 head = p.read_text(encoding="utf-8", errors="replace")[:2000]
             except OSError:                          # pragma: no cover - 读不动就当空
                 head = ""
-        low = (p.name + " " + head).lower()
-        if any(m.lower() in low for m in PLACEHOLDER_MARKERS) or p.stat().st_size < SUSPICIOUS_BYTES:
+        if _is_placeholder(p.name, head, p.stat().st_size):
             placeholders.append(p)
         else:
             keep.append(p)
@@ -120,20 +232,10 @@ def main() -> int:
         got = len(hits)
         ok_file = got >= need
         # 结论行：出现编号 + 一个**真的判定**（不是"未做"、不是占位/示例）。
-        # 最后那两条排除是实测补上的：
-        #   ① 我自检时往 结论.md 写过 `M1 搜索文件 | 通过 | 自检`，
-        #      它一开始被当成"已填结论" —— 假结论能把校验刷成绿色；
-        #   ② 模板里就写着 `未做`，若不排除，照抄模板提交上来也是"全绿"。
-        line_re = re.compile(rf"^\s*{code}\b.*?({'|'.join(DONE_WORDS)})", re.MULTILINE)
-        has_line = False
-        for m in line_re.finditer(verdict_text):
-            body = m.group(0)
-            if any(k.lower() in body.lower() for k in PLACEHOLDER_MARKERS):
-                continue
-            if any(k in body for k in NOT_DONE_WORDS):
-                continue
-            has_line = True
-            break
+        # 判定逻辑抽到 `_has_real_verdict()`，这样 `--self-test` 验证的
+        # 就是**真正在用的那段代码**，而不是另写一份（本项目踩过"探针自己复刻一份
+        # 判据"的亏：复刻的那份会与产品漂移，于是报出产品已不会犯的错）。
+        has_line = _has_real_verdict(code, verdict_text)
         mark = "OK  " if (ok_file and has_line) else "缺  "
         detail = f"证据 {got}/{need}"
         if not has_line:
