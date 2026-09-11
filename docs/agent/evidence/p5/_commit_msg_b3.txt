@@ -1,0 +1,43 @@
+P5-B3：真 ST + 真 vec0 端到端实测（账本从 3 项缺口降到 2 项）
+
+这一轮不写产品代码，只做"把没实测过的组合真的跑一遍"。B3 是 P5 闭环
+缺口之一：真 sentence-transformers 模型从未下载过，真 vec0 索引与真
+模型的组合更是从未跑过 —— 之前全是用例里的假模块。
+
+实测（证据 docs/agent/evidence/p5/st_vec0_e2e.txt，7442 bytes）：
+
+一、真 ST 嵌入器
+- 懒加载 13.29s，返回 384 维
+- L2 范数 1.000000（确实归一化了）
+- 自相似 1.000000，跨句相似 0.460834（不是常数，说明真的在算）
+
+二、真 ST + 真 vec0
+- stats() 如实报 vector_backend=sqlite_vec、dim=384、degraded=false
+- 写 3 条 → count=3；检索「浏览器」命中「我喜欢用 Chrome 浏览器」；
+  换成「Chrome」命中同一条；检索「外星人」0 命中（不是"总能返回点什么"）
+- items()/get()/recent() 三个扩展方法都真能用
+
+三、同一库文件 256 维 → 384 维（hashing 换 ST）
+- 不抛异常（维度不匹配不能让记忆功能整个失效）
+- dim 如实报 384，不沿用 256
+- 旧文本条目仍在（count=1），词法检索仍可用
+- 硬证据：直接读 sqlite_master，vec0 虚表建表 SQL 已是
+  embedding float[384] —— 光看日志有"重建索引"那一行不算，
+  要看库里那张虚表的宽度真的变了
+
+四、对照：强制 vector_backend='python' 也能写入与检索
+
+顺带核实（脚本第一版自己的错，已记入证据）：coerce_kind 把不认识的
+kind 一律收敛成 fact（源码 docstring 明说），所以探针里随手写的
+"preference" 安静变成了 fact。这是脚本的错不是产品的 ——
+memory_tools 的 _KIND_ENUM 与 MemoryKind 三个值逐字一致。
+另有 ready() 被误当"能不能用"的判据：它的契约是"未尝试加载时返回
+False"，是懒加载状态查询，不是能力探测；正确判据是真的用一次。
+
+账本动作（_tmp_b3_ledger.py，逐条断言后才落盘）：
+state: pending → measured；planned_evidence 搬家到 evidence（是搬家
+不是复制，留着 planned 等于账本同时写着"还没写"和"已归档"）；
+并断言证据文件存在且非空（G13 只查存在，这里连非空一起查）。
+
+收口审计重跑：18 项，证据缺失 0 条，未到终态 3 → 2（剩 B4/B5）。
+AGENTS.md 完成度表同步：新增「✅ 已实测 1」一行，缺口 3 → 2。

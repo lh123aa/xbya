@@ -1,0 +1,198 @@
+# P5-B3 证据：真 sentence-transformers 嵌入器 + sqlite-vec(vec0) 端到端
+
+生成时间：2026-09-11 10:16:23
+
+> 可复跑：`python docs/agent/evidence/p5/_tmp_b3_st_vec0.py`
+
+
+## 一、真 ST 嵌入器（懒加载 + 编码 + 归一化）
+
+- `ready()`（**未使用前**）→ **False** —— 契约是「未尝试加载时返回 False」，
+  它是懒加载状态查询，**不是**「能不能用」的判据。下面真的用一次：
+- 首次 `embed_one()` 触发懒加载，用时 **9.33s**，返回长度 **384**
+- 用完之后 `ready()` → **True**（这才是「已加载」）
+- `dim` → **384**
+- `describe()` → `SentenceTransformerEmbedder(model=all-MiniLM-L6-v2, dim=384, state=ready)`
+- 向量长度 = **384**，L2 范数 = **1.000000**（应为 1，即已归一化）
+- 同句自相似 = **1.000000**（确定性：应为 1.0）
+- 异句相似 = **0.460834**（明显小于 1 才说明它真的在区分语义）
+
+## 二、真 ST + vec0 端到端：写入 3 条 → 语义检索
+
+- `stats()` 初始：
+```json
+{
+  "count": 0,
+  "by_kind": {},
+  "vector_backend": "sqlite_vec",
+  "vector_backend_config": "auto",
+  "dim": 384,
+  "path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\mem.db",
+  "requested_path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\mem.db",
+  "pruned": 0,
+  "degraded": false,
+  "degraded_reason": "",
+  "ready": true,
+  "max_items": 2000,
+  "min_similarity": 0.25,
+  "rrf_k": 60,
+  "writes": 0,
+  "embedder": "SentenceTransformerEmbedder(model=all-MiniLM-L6-v2, dim=384, state=ready)"
+}
+```
+- add(MemoryItem(text='我喜欢用 Chrome 浏览器', kind='fact')) → True
+- add(MemoryItem(text='每周三下午开组会', kind='episode')) → True
+- add(MemoryItem(text='下载目录是我的常用目录', kind='fact')) → True
+
+- 写入后条数 = **3**
+- 向量后端（实际生效）= **sqlite_vec**
+- `stats()`：
+```json
+{
+  "count": 3,
+  "by_kind": {
+    "episode": 1,
+    "fact": 2
+  },
+  "vector_backend": "sqlite_vec",
+  "vector_backend_config": "auto",
+  "dim": 384,
+  "path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\mem.db",
+  "requested_path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\mem.db",
+  "pruned": 0,
+  "degraded": false,
+  "degraded_reason": "",
+  "ready": true,
+  "max_items": 2000,
+  "min_similarity": 0.25,
+  "rrf_k": 60,
+  "writes": 3,
+  "embedder": "SentenceTransformerEmbedder(model=all-MiniLM-L6-v2, dim=384, state=ready)"
+}
+```
+
+### 语义检索：问「浏览器」应当命中「我喜欢用 Chrome 浏览器」
+- score=0.0328  kind=MemoryKind.FACT  text='我喜欢用 Chrome 浏览器'
+- score=0.0161  kind=MemoryKind.FACT  text='下载目录是我的常用目录'
+- score=0.0159  kind=MemoryKind.EPISODE  text='每周三下午开组会'
+
+### 换词形：问「Chrome」也应命中同一条（词法检索做不到这一点）
+- score=0.0328  text='我喜欢用 Chrome 浏览器'
+
+### 无关查询：问「外星人」应当检索不出（或分数极低）
+- 命中 0 条
+
+### get / recent 也要在真 ST 下可用
+- items() 取到 3 条；首条 id = 'm1a08f5340afbb75ea'
+- get('m1a08f5340afbb75ea') → '我喜欢用 Chrome 浏览器'
+- recent(2) → ['下载目录是我的常用目录', '每周三下午开组会']
+
+## 三、维度变化：同一个库文件先用 256（hashing）建，再用 384（真 ST）打开
+
+- 256 维度阶段：
+```json
+{
+  "count": 1,
+  "by_kind": {
+    "fact": 1
+  },
+  "vector_backend": "sqlite_vec",
+  "vector_backend_config": "auto",
+  "dim": 256,
+  "path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "requested_path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "pruned": 0,
+  "degraded": false,
+  "degraded_reason": "",
+  "ready": true,
+  "max_items": 2000,
+  "min_similarity": 0.25,
+  "rrf_k": 60,
+  "writes": 1,
+  "embedder": "HashingEmbedder(dim=256, ngram=2,3)"
+}
+```
+
+- 换成 384 维度（真 ST）后重新打开**同一个库文件**：
+```json
+{
+  "count": 1,
+  "by_kind": {
+    "fact": 1
+  },
+  "vector_backend": "sqlite_vec",
+  "vector_backend_config": "auto",
+  "dim": 384,
+  "path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "requested_path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "pruned": 0,
+  "degraded": false,
+  "degraded_reason": "",
+  "ready": true,
+  "max_items": 2000,
+  "min_similarity": 0.25,
+  "rrf_k": 60,
+  "writes": 0,
+  "embedder": "SentenceTransformerEmbedder(model=all-MiniLM-L6-v2, dim=384, state=ready)"
+}
+```
+
+### 判定
+
+看三件事是否同时成立：
+1. 打开时**没有抛异常**（维度不匹配不能让记忆功能整个失效）；
+2. `dim` 如实报 **384**（不是含糊地沿用 256）；
+3. 索引**被重建** —— 旧 256 维的向量不能再被当作 384 维用；
+   重建的代价是旧的**向量索引**失效，但**文本条目必须还在**（词法检索仍可用）。
+
+- 重新打开后条数 = **1**（旧的**文本**条目应当仍在）
+- 384 下 add 一条后条数 = **2**
+- 检索「记忆」→ ['先用 hashing 写进去的一条记忆', '384 维度下新写入的一条']
+
+### 硬证据：直接读 vec0 虚表的建表 SQL
+- 表 `memory_vec`：`CREATE VIRTUAL TABLE memory_vec USING vec0(item_id TEXT PRIMARY KEY, embedding float[384] distance_metric=cosine)`
+
+- 结论：**✅ 虚表宽度已是 float[384]**（找到 1 张声明 384 的虚表）
+- 最终 stats()：
+```json
+{
+  "count": 2,
+  "by_kind": {
+    "fact": 2
+  },
+  "vector_backend": "sqlite_vec",
+  "vector_backend_config": "auto",
+  "dim": 384,
+  "path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "requested_path": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_b3_lh2o9_fe\\dim_change.db",
+  "pruned": 0,
+  "degraded": false,
+  "degraded_reason": "",
+  "ready": true,
+  "max_items": 2000,
+  "min_similarity": 0.25,
+  "rrf_k": 60,
+  "writes": 1,
+  "embedder": "SentenceTransformerEmbedder(model=all-MiniLM-L6-v2, dim=384, state=ready)"
+}
+```
+
+## 四、对照：强制 vector_backend='python'（不依赖 sqlite-vec）
+
+- 实际后端 = **python**
+- 检索 → ['纯 python 后端也要能写入与检索']
+
+### 一个顺手核实过的相邻事实：`coerce_kind` 的宽松是有意的
+
+`MemoryKind` 只有三个值（`fact` / `episode` / `entity`），而 `coerce_kind()`
+**把不认识的一律收敛成 `fact`**（源码 docstring 明说）。所以若往 `kind` 里塞
+`"preference"`，它不会报错，会安静地变成 `fact`——本脚本第一版就是随手写了个
+不存在的 `"preference"`，于是 `by_kind` 显示 `{"episode": 1, "fact": 2}`
+而不是预期的两类。**这是脚本的错，不是产品的**：`memory_tools` 的 `_KIND_ENUM`
+与 `MemoryKind` 三个值**逐字一致**，LLM 能选的枚举里不存在 `preference`。
+
+---
+
+**边界声明**：本脚本验证的是「真 ST 模型 + 真 vec0 索引」这条组合在**本机**上的行为，
+包括维度变化时的重建。它**不**验证：跨机器的一致性、超大库（>1000 条）下的检索质量、
+以及换模型（比如换个维度的 ST 模型）后的语义质量差异 —— 这些需要另行测量。

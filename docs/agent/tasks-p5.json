@@ -102,14 +102,15 @@
       "id": "P5-B3",
       "priority": "P1",
       "title": "真 ST 嵌入器 + vec0 端到端：384 维写入与检索，维度变化时索引被重建",
-      "state": "pending",
+      "state": "measured",
       "acceptance": [
         "真模型写入一条记忆并检索回来",
         "维度变化时索引被重建且如实报告"
       ],
-      "planned_evidence": [
+      "evidence": [
         "docs/agent/evidence/p5/st_vec0_e2e.txt"
-      ]
+      ],
+      "conclusion": "本机实测通过：真 ST（all-MiniLM-L6-v2，384 维）懒加载 13.29s，首次 embed_one 后 ready()=True，向量 L2 范数 1.000000；真 ST + 真 vec0 下写入 3 条并检索，语义命中正确（「浏览器」/「Chrome」命中同一条、「外星人」0 命中）；同一库文件从 256 维切到 384 维**不抛异常**，dim 如实报 384，旧文本条目仍在（count=1），且硬证据显示 vec0 虚表已被重建为 float[384]（schema 原文留档）；强制 vector_backend='python' 的对照也可写入与检索"
     },
     {
       "id": "P5-B4",
