@@ -105,14 +105,34 @@ def main() -> int:
     # ── 底层能力：app.route_with_tools（function calling）──
     print("\n[F3-a] LLM 路由兜底（真实 function calling）")
     check(hasattr(app, "route_with_tools"), "app.route_with_tools 存在")
+    # 调用前后记账：若这次 `route_with_tools` 返回 None **且**期间抓到 429，
+    # 那结论只能是"配额用尽导致没问到模型"，不能判成"我们的 function calling 不行"。
+    #
+    # 这一处是 P5-C1 轮次实测出来的：我在那轮为查 key 状态多打了几次真实请求，
+    # 把免费档 8000 TPM 用完，于是本脚本报出 `16/18 通过，2 失败` ——
+    # 而两条失败正是下面那两个断言。等配额窗口过去原样重跑，**17/17 全过**。
+    # 也就是说：单看那一次的数字，会得出"产品 function calling 坏了"的错误结论。
+    #
+    # 这与缺陷 18（429 伪装成"规划器偶尔拆不出计划"）是同一个病：
+    # **外部配额伪装成代码问题**。规划器那条早已用 skipped() 处置，
+    # 工具调用这条当时漏了 —— 而末段那句"凡受此影响的断言都已归入 [SKIP]"
+    # 因此变成了**假话**（那次运行明明有 2 个 FAIL）。这里补上，并让那句话成立。
+    _hits_before = len(quota.hits)
     probe = app.route_with_tools(
         "你是意图路由器，从工具里选一个并填参数", "帮我看看电脑还有多少电", TOOL_SCHEMAS)
     print(f"  route_with_tools → {probe}")
-    check(probe is not None and probe.get("name"),
-          "真实函数调用返回了工具名",
-          str(probe.get("name")) if probe else "None")
-    check(bool(probe and probe.get("name") in [t["name"] for t in TOOL_SCHEMAS]),
-          "选中的工具在 schema 清单内")
+    _quota_hit_here = len(quota.hits) > _hits_before
+    _why = (f"这次调用期间抓到 429/限流：{quota.hits[_hits_before][:90]} —— "
+            "**外部配额，不是本层结论**；等配额恢复后重跑")
+    if probe is None and _quota_hit_here:
+        skipped("真实函数调用返回了工具名", _why)
+        skipped("选中的工具在 schema 清单内", _why)
+    else:
+        check(probe is not None and probe.get("name"),
+              "真实函数调用返回了工具名",
+              str(probe.get("name")) if probe else "None")
+        check(bool(probe and probe.get("name") in [t["name"] for t in TOOL_SCHEMAS]),
+              "选中的工具在 schema 清单内")
 
     # ── HybridRouter 走真实 LLM 兜底（用**已装配**的 router，证明接线真的通）──
     print("\n[F3-a2] HybridRouter 真实兜底（规则认不出的说法）")

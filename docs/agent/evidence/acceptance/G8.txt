@@ -1,14 +1,14 @@
 # 关卡: G8 F3 真实 LLM 全链路
 # 命令: C:\Python312\python.exe tools/verify_f3_real_llm.py
-# 用时: 97.0s
-# 退出码: 0
+# 用时: 157.0s
+# 退出码: 1
 # 外部依赖: 是
 ------------------------------------------------------------------------
 ========================================================================
 F3 真实 LLM 端到端验证（真实 App + 真实 API）
 ========================================================================
 
-应用初始化: True  (4.1s)
+应用初始化: True  (5.8s)
 [PASS] 应用初始化成功
 [PASS] Agent 层已装配
 
@@ -16,9 +16,9 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 
 [F3-a] LLM 路由兜底（真实 function calling）
 [PASS] app.route_with_tools 存在
-  route_with_tools → {'name': 'system_info', 'arguments': {'metric': 'battery'}}
-[PASS] 真实函数调用返回了工具名  → system_info
-[PASS] 选中的工具在 schema 清单内
+  route_with_tools → None
+[FAIL] 真实函数调用返回了工具名  → None
+[FAIL] 选中的工具在 schema 清单内
 
 [F3-a2] HybridRouter 真实兜底（规则认不出的说法）
   stack.router = HybridRouter
@@ -26,8 +26,8 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
   内层 LLM 路由 = LLMRouter
 [PASS] LLM 路由已注入（非 None）
 [PASS] 注入的正是 app.route_with_tools（真实 API）  → XiaoyiApp.route_with_tools
-  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  786ms
-  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  968ms
+  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  24140ms
+  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  5567ms
   LLM 命中计数: 0 → 2
 [PASS] LLM 路由**确实被触发**（不是纯规则兜底）  → llm_hits 0→2
 
@@ -35,18 +35,18 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 [PASS] 摘要器存在
   模板摘要: '找到 6 个文件（安装包_1.exe、安装包_2.exe、安装包_3.exe 等 6 个）'
   should_refine: True
-  LLM 润色 (1653ms): '好的呀，我找到了6个文件，分别是安装包_1.exe、安装包_2.exe、安装包_3.exe、安装包_4.exe、安装包_5.exe和安装包_6.exe'
-[PASS] 润色产出了文本  → 75 字
+  LLM 润色 (18158ms): '我帮你找到了6个文件，分别是安装包_1.exe、安装包_2.exe、安装包_3.exe、安装包_4.exe、安装包_5.exe等等。'
+[PASS] 润色产出了文本  → 66 字
 [PASS] 润色结果与模板不同
-[PASS] 润色在 30s 内返回  → 1653ms
+[PASS] 润色在 30s 内返回  → 18158ms
 
 [F3-c] LLM 规划器（规则配方认不出的多步目标）
-  第1次 (3732ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
-  第2次 (20012ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
-  第3次 (3882ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
-  LLM 规划成功率: 0/3（其中 1 次是撞超时上界的）
-  ⚠️ 抓到 1 条 LLM 配额/限流告警（429），例如：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageat
-[SKIP] LLM 拆出了多步计划（3 次内至少 1 次）  → 3 次全部失败，但抓到 429/限流：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in o —— **外部配额（免费档 8000 TPM），不是本层结论**；等一分钟再跑，或换已充值的 key
+  第1次 (20010ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  第2次 (20013ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  第3次 (20008ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  LLM 规划成功率: 0/3（其中 3 次是撞超时上界的）
+  ⚠️ 抓到 7 条 LLM 配额/限流告警（429），例如：tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sba
+[SKIP] LLM 拆出了多步计划（3 次内至少 1 次）  → 3 次全部失败，但抓到 429/限流：tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b`  —— **外部配额（免费档 8000 TPM），不是本层结论**；等一分钟再跑，或换已充值的 key
 
 [F3-e] 提示词含本机真实目录（确定性，不调 LLM）
   白名单目录: ['Desktop=C:\\Users\\49046\\Desktop', 'Documents=C:\\Users\\49046\\Documents', 'Downloads=C:\\Users\\49046\\Downloads', 'Pictures=C:\\Users\\49046\\Pictures']
@@ -56,20 +56,24 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 
 [F3-d] LLM 提议的危险计划 → 安全层拦截（真实管线全链路）
   第1轮事件流: ['pipeline.chat', 'speech.recognized']
-  第2轮事件流: ['pipeline.chat', 'speech.recognized']
-  第3轮事件流: ['pipeline.chat', 'speech.recognized']
-[PASS] 退回闲聊（未执行任何步骤）
+  第2轮事件流: ['feedback.ack', 'plan.started', 'speech.recognized', 'plan.step.done', 'plan.finished', 'task.completed', 'feedback.result']
+  计划收尾: failed  done=1/3
+  文案: 没找到「*安装包*」相关的文件呢。但第 2 步没做成：这个位置我不能动哦，只能操作：C:\Users\49046\Desktop、C:\Users\49046\Documents、C:\Users\49046\Downl
+[PASS] 含违规步骤的计划未成功执行  → failed
+[PASS] 拒绝理由对用户可读  → 没找到「*安装包*」相关的文件呢。但第 2 步没做成：这个位置我不能动哦，只能操作：C:\Users\49046\Des
 
-[配额观察] 共抓到 4 条 429/限流告警：
-  · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
-  · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
-  · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
+[配额观察] 共抓到 9 条 429/限流告警：
+  · tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tie
+  · tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tie
+  · tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tie
   → 凡受此影响的断言都已归入 [SKIP]，**没有**被算成通过
 
 ========================================================================
 pygame 2.6.1 (SDL 2.28.4, Python 3.12.8)
 Hello from the pygame community. https://www.pygame.org/contribute.html
-F3 结果：17/17 通过，0 失败，1 跳过（共 18 项）
+F3 结果：16/18 通过，2 失败，1 跳过（共 19 项）
+  [FAIL] 真实函数调用返回了工具名
+  [FAIL] 选中的工具在 schema 清单内
   [SKIP] LLM 拆出了多步计划（3 次内至少 1 次）
 ========================================================================
 C:\Python312\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.

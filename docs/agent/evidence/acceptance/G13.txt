@@ -1,6 +1,6 @@
 # 关卡: G13 仓库卫生（版本控制 / 忽略规则 / 密钥）
 # 命令: C:\Python312\python.exe tools/check_repo_hygiene.py
-# 用时: 0.9s
+# 用时: 1.1s
 # 退出码: 0
 # 外部依赖: 否
 ------------------------------------------------------------------------
@@ -9,11 +9,11 @@
 ========================================================================
 [PASS] 在真正的 git 工作区内  → rev-parse → 'true'
 [PASS] `.git` 是目录（不是 worktree 指针文件）
-[PASS] 至少有一次提交  → 30 个提交
+[PASS] 至少有一次提交  → 32 个提交
 [PASS] 没有遗留的 stash  → 空
       （证据目录有 13 项变化 —— 属验收运行的正常产物，不计为脏；跑完后应提交）
 [PASS] 工作区干净（排除验收证据目录）  → 干净
-[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 271
+[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 277
 [PASS] 没有被禁文件进入版本库  → 全部合规
 [PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
 [PASS] config.example.yaml 存在
@@ -29,7 +29,7 @@
 [跳过] tasks-p2.json 里没有带 evidence 的任务，无可查
 [跳过] tasks-p3.json 里没有带 evidence 的任务，无可查
 [PASS] tasks-p4.json 里声明的证据路径都存在  → 查了 13 条
-[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 21 条
+[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 24 条
 [跳过] tasks.json 里没有带 evidence 的任务，无可查
 [PASS] `.gitattributes` 对抓取原文关掉了文本转换  → 否则 MD5 判据跨机器失效
 [PASS] Git 实际判定该路径不做文本转换  → tests/fixtures/serp/bing_run1.html: text: unset
