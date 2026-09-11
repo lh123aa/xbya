@@ -146,10 +146,17 @@
       "priority": "P2",
       "title": "轮换两个已泄露的 key（Groq / OpenRouter）",
       "state": "human",
-      "minimal_path": "厂商控制台各生成新 key → 覆盖 config.yaml 的 api_key 与 fallback_api_key → python tools/probe_llm_capability.py --engine universal",
+      "minimal_path": "① 厂商控制台各生成新 key（Groq `gsk_` / OpenRouter `sk-or-v1-`）；② 覆盖 config.yaml 的**三处**：`plugins.llm.cloud.api_key`（主，**它覆盖下面的**）、`plugins.llm.params.api_key`（主，一起改，否则两处长期不一致）、`plugins.llm.params.fallback_api_key`（备）；③ `python tools/probe_llm_capability.py --engine universal` 验证；④ 到厂商控制台**吊销旧 key**（只改本地不算轮换）。轮换前基线见 evidence/p5/key_rotation.txt：当前两把 key **都还有效**（主 key 报 429 限流而非 401，备 key 实测可降级成功），且降级链路的 chat_with_tools() 实测可用。",
       "why_ai_cannot": "没有厂商控制台权限",
-      "planned_evidence": [
+      "planned_evidence": [],
+      "evidence": [
         "docs/agent/evidence/p5/key_rotation.txt"
+      ],
+      "acceptance": [
+        "探针输出不再出现 401/403（429 允许：那是额度不是身份）",
+        "能力探测通过数 ≥ 轮换前基线 5/6",
+        "厂商控制台里旧 key 显示 Revoked/Deleted（这是唯一权威判据，本地测不出来）",
+        "`git check-ignore config.yaml` 仍返回 0（新 key 不进 git 历史）"
       ]
     },
     {
@@ -157,10 +164,19 @@
       "priority": "P2",
       "title": "人工验收 M1~M5 + G1（麦克风 / GUI 动效 / 人耳听感）",
       "state": "human",
-      "minimal_path": "python tools/prepare_manual_acceptance.py init → 照 docs/agent/manual-acceptance.md 做 → 证据放 evidence/manual/ → 结论写 结论.md → python tools/check_manual_evidence.py",
+      "minimal_path": "① `python tools/prepare_manual_acceptance.py init`（建沙箱 + 临时改白名单）→ `启动欣雅.bat`；② 照 `docs/agent/evidence/manual/执行清单.md` 逐条走（6 条：M1~M5 + G1），逐条存证据到 `docs/agent/evidence/manual/`；③ 填 `docs/agent/evidence/manual/结论.md`（判定词只认 通过/部分通过/不通过/未做）；④ **必做** `prepare_manual_acceptance.py restore` + `cleanup`；⑤ `python tools/check_manual_evidence.py` 校验。当前校验结果：**还差 6 条（M1, M2, M3, M4, M5, G1）**，即一条都没做。注意打断热键是 `Ctrl+Alt+D`（配置键 voice.hotkey_interrupt，清单里的值是从 config 读出来的，不是手抄）。",
       "why_ai_cannot": "麦克风采集、GUI 动效、人耳听感只有人能判",
       "evidence": [
-        "docs/agent/evidence/manual/"
+        "docs/agent/evidence/manual/",
+        "docs/agent/evidence/manual/执行清单.md",
+        "docs/agent/evidence/manual/README.md"
+      ],
+      "acceptance": [
+        "`check_manual_evidence.py` 报「全部齐」且无「未做」",
+        "结论.md 每条都有实测判定（通过/部分通过/不通过），不是占位",
+        "M2 预览里的文件名必须是验收截图那两个 PNG（缺陷 14 的验收点）",
+        "M5 审计库里能查到这次拒绝的记录",
+        "结论需写明机器与日期（哪台机器、什么麦克风、什么版本）"
       ]
     },
     {

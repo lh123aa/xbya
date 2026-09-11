@@ -1,6 +1,6 @@
 # P5 收口审计（P5-AUDIT-CLOSURE）
 
-生成时间：2026-09-11 11:51:56
+生成时间：2026-09-11 12:18:48
 
 > 本文件是**可复跑**的：`python docs/agent/evidence/p5/_tmp_closure_audit.py`
 > 它不产生结论，只逐条把事实列出来 —— 结论要么被这些行支持，要么不成立。
@@ -17,8 +17,8 @@
 | P5-B3 | ✅ 已实测 | ✔ `docs/agent/evidence/p5/st_vec0_e2e.txt` | （无） |
 | P5-B4 | ✅ 已实测 | ✔ `docs/agent/evidence/p5/asr_long_sentence.txt` | （无） |
 | P5-B5 | ✅ 已实测 | ✔ `docs/agent/evidence/p5/serp_parser.txt`<br>✔ `docs/agent/evidence/p5/serp_parser_raw_probes.txt` | （无） |
-| P5-C1 | 🟡 待人工 | （无） | `docs/agent/evidence/p5/key_rotation.txt` |
-| P5-C2 | 🟡 待人工 | ✔ `docs/agent/evidence/manual/` | （无） |
+| P5-C1 | 🟡 待人工 | ✔ `docs/agent/evidence/p5/key_rotation.txt` | （无） |
+| P5-C2 | 🟡 待人工 | ✔ `docs/agent/evidence/manual/`<br>✔ `docs/agent/evidence/manual/执行清单.md`<br>✔ `docs/agent/evidence/manual/README.md` | （无） |
 | P5-C3 | ⬜ 明确不做 | （无） | （无） |
 | P5-C4 | ⬜ 明确不做 | （无） | （无） |
 | P5-C5 | ⬜ 明确不做 | （无） | （无） |
@@ -75,10 +75,9 @@
 ========================================================================
 [PASS] 在真正的 git 工作区内  → rev-parse → 'true'
 [PASS] `.git` 是目录（不是 worktree 指针文件）
-[PASS] 至少有一次提交  → 30 个提交
+[PASS] 至少有一次提交  → 31 个提交
 [PASS] 没有遗留的 stash  → 空
-      （证据目录有 17 项变化 —— 属验收运行的正常产物，不计为脏；跑完后应提交）
-[PASS] 工作区干净（排除验收证据目录）  → 干净
+[FAIL] 工作区干净（排除验收证据目录）  → 2 项未提交：[' M docs/agent/tasks-p5.json', ' M ui/pet_window.py']
 [PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 271
 [PASS] 没有被禁文件进入版本库  → 全部合规
 [PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
@@ -95,14 +94,15 @@
 [跳过] tasks-p2.json 里没有带 evidence 的任务，无可查
 [跳过] tasks-p3.json 里没有带 evidence 的任务，无可查
 [PASS] tasks-p4.json 里声明的证据路径都存在  → 查了 13 条
-[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 21 条
+[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 24 条
 [跳过] tasks.json 里没有带 evidence 的任务，无可查
 [PASS] `.gitattributes` 对抓取原文关掉了文本转换  → 否则 MD5 判据跨机器失效
 [PASS] Git 实际判定该路径不做文本转换  → tests/fixtures/serp/bing_run1.html: text: unset
 ------------------------------------------------------------------------
-仓库卫生自检：22/22 通过，0 失败
+仓库卫生自检：21/22 通过，1 失败
+  [FAIL] 工作区干净（排除验收证据目录）
 ========================================================================
-[exit] 0
+[exit] 1
 [项数] 22 项（本行由脚本从上面那段输出里解析，不是手抄）
 ```
 
