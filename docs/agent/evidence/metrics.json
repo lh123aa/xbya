@@ -11,7 +11,7 @@
     "id": "M2",
     "name": "规则路由延迟",
     "target": "P95 <10ms",
-    "measured": "P50 0.036ms / P95 0.049ms / P99 0.075ms (n=365)",
+    "measured": "P50 0.035ms / P95 0.047ms / P99 0.060ms (n=365)",
     "verdict": "PASS",
     "note": ""
   },
@@ -19,7 +19,7 @@
     "id": "M3",
     "name": "感知延迟（首次反馈→确认语）",
     "target": "<1.5s",
-    "measured": "P50 2.3ms / max 2.8ms (n=4)",
+    "measured": "P50 2.5ms / max 2.6ms (n=4)",
     "verdict": "PASS",
     "note": "ack 与 submit 并行发射，确认语走预热缓存"
   },
@@ -27,7 +27,7 @@
     "id": "M4",
     "name": "总延迟（结果播报）",
     "target": "<3s",
-    "measured": "P50 4.6ms / max 11.3ms (n=4)",
+    "measured": "P50 3.9ms / max 11.5ms (n=4)",
     "verdict": "PASS",
     "note": ""
   },

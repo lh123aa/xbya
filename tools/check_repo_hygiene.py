@@ -282,7 +282,17 @@ def main() -> int:
     #
     # 只查"路径存在"，不查"内容是否充分" —— 后者需要人判，混进来会让关卡变得
     # 又重又不可信（本项目的原则：关卡要么确定，要么别放）。
-    for task_file in ("tasks.json", "tasks-p2.json", "tasks-p3.json", "tasks-p4.json"):
+    #
+    # **清单必须自动发现，不能手写**（P5-AUDIT 修的）：原先写死四个文件名，
+    # 于是新阶段一加 `tasks-p5.json`，它的证据检查就**悄悄不生效** ——
+    # 关卡照样全绿，而"新阶段没人查"这件事没有任何提示。
+    # 这种"沉默失明"正是本关卡自己要防的东西（与 §16.4 的漏登记 pragma 同族），
+    # 所以改成 glob 发现 + **至少 4 份**的下限自检：文件名换了、被搬走了都会红。
+    task_files = sorted(p.name for p in (ROOT / "docs" / "agent").glob("tasks*.json"))
+    check(len(task_files) >= 4,
+          "找到 ≥4 份阶段任务清单（tasks*.json）",
+          f"实际 {len(task_files)} 份：{task_files}")
+    for task_file in task_files:
         tf = ROOT / "docs" / "agent" / task_file
         if not tf.exists():
             continue

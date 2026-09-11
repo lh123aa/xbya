@@ -1,6 +1,6 @@
 # 关卡: G8 F3 真实 LLM 全链路
 # 命令: C:\Python312\python.exe tools/verify_f3_real_llm.py
-# 用时: 117.5s
+# 用时: 74.7s
 # 退出码: 0
 # 外部依赖: 是
 ------------------------------------------------------------------------
@@ -8,7 +8,7 @@
 F3 真实 LLM 端到端验证（真实 App + 真实 API）
 ========================================================================
 
-应用初始化: True  (4.0s)
+应用初始化: True  (4.7s)
 [PASS] 应用初始化成功
 [PASS] Agent 层已装配
 
@@ -26,8 +26,8 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
   内层 LLM 路由 = LLMRouter
 [PASS] LLM 路由已注入（非 None）
 [PASS] 注入的正是 app.route_with_tools（真实 API）  → XiaoyiApp.route_with_tools
-  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  800ms
-  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  3539ms
+  '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  896ms
+  '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  969ms
   LLM 命中计数: 0 → 2
 [PASS] LLM 路由**确实被触发**（不是纯规则兜底）  → llm_hits 0→2
 
@@ -35,22 +35,28 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 [PASS] 摘要器存在
   模板摘要: '找到 6 个文件（安装包_1.exe、安装包_2.exe、安装包_3.exe 等 6 个）'
   should_refine: True
-  LLM 润色 (1497ms): '找到了6个文件呢，都是安装包_1.exe到安装包_6.exe，您可以点开看看哦'
-[PASS] 润色产出了文本  → 39 字
+  LLM 润色 (1285ms): '已经找到 6 个文件哦，包括 安装包_1.exe、安装包_2.exe、安装包_3.exe、安装包_4.exe、安装包_5.exe 等。'
+[PASS] 润色产出了文本  → 67 字
 [PASS] 润色结果与模板不同
-[PASS] 润色在 30s 内返回  → 1497ms
+[PASS] 润色在 30s 内返回  → 1285ms
 
 [F3-c] LLM 规划器（规则配方认不出的多步目标）
-  第1次 (20009ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
-  第2次 (16385ms) 规划器返回 None（返回过快 → 可能是解析/校验问题）
-  第3次 (13118ms) 来源=llm 步数=2
-    s1: file_search({'dirs': ['Downloads'], 'patterns': ['*.exe', '*.msi']})  // 在下载目录中查找安装程序文件
-    s2: file_move({'source': '${s1.paths.0}', 'dest': 'Documents'})  // 将找到的第一个安装程序移动到文档文件夹（作为软件归档）
-  LLM 规划成功率: 1/3（其中 1 次是撞超时上界的）
-  ⚠️ 抓到 4 条 LLM 配额/限流告警（429），例如：tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sba
-[PASS] LLM 拆出了多步计划（3 次内至少 1 次）  → 1/3
+  第1次 (20005ms) 规划器返回 None（撞满 20s 上界 → 服务端慢）
+  第2次 (3712ms) 来源=llm 步数=5
+    s1: file_search({'pattern': '*.exe', 'dirs': ['Downloads']})  // 在下载目录搜索所有 .exe 安装包
+    s2: file_move({'source': '${s1.paths.0}', 'dest': 'Documents'})  // 把找到的第一个 .exe 安装包移动到软件归档目录（Documents）
+    s3: file_search({'pattern': '*.msi', 'dirs': ['Downloads']})  // 在下载目录搜索所有 .msi 安装包
+    s4: file_move({'source': '${s3.paths.0}', 'dest': 'Documents'})  // 把找到的第一个 .msi 安装包移动到软件归档目录（Documents）
+    s5: open_app({'target': 'Downloads'})  // 打开下载目录，让你手动检查并清理空文件夹
+  第3次 (15454ms) 来源=llm 步数=3
+    s1: file_search({'pattern': '*', 'dirs': ['Downloads']})  // 搜索下载目录中的所有文件（假设为安装包）
+    s2: file_move({'source': '${s1.paths}', 'dest': 'Documents\\软件归档'})  // 将搜索到的文件移动到软件归档文件夹
+    s3: file_delete({'targets': ['Downloads'], 'pattern': '', 'dirs': ['Downloads']})  // 清理下载目录中的空文件夹
+  LLM 规划成功率: 2/3（其中 1 次是撞超时上界的）
+  ⚠️ 抓到 1 条 LLM 配额/限流告警（429），例如：API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageat
+[PASS] LLM 拆出了多步计划（3 次内至少 1 次）  → 2/3
 [PASS] 计划里的工具名全部合法
-[PASS] 至少 2 步  → 2 步
+[PASS] 至少 2 步  → 5 步
 
 [F3-e] 提示词含本机真实目录（确定性，不调 LLM）
   白名单目录: ['Desktop=C:\\Users\\49046\\Desktop', 'Documents=C:\\Users\\49046\\Documents', 'Downloads=C:\\Users\\49046\\Downloads', 'Pictures=C:\\Users\\49046\\Pictures']
@@ -65,8 +71,8 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
   第3轮事件流: ['pipeline.chat', 'speech.recognized']
 [PASS] 退回闲聊（未执行任何步骤）
 
-[配额观察] 共抓到 7 条 429/限流告警：
-  · tools 调用失败: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tie
+[配额观察] 共抓到 3 条 429/限流告警：
+  · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   · API 错误: 429 - {"error":{"message":"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01khx8sbageatsv0gjp3xbfzpe` service tier `o
   → 凡受此影响的断言都已归入 [SKIP]，**没有**被算成通过

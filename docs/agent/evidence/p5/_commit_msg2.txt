@@ -1,0 +1,31 @@
+P5-AUDIT 收口：G13 证据检查改为自动发现 + 13 关验收留证
+
+一、G13 的问题（属于"检查本身的沉默失明"）
+
+  check_repo_hygiene.py 的 task 文件清单原先**写死四个名字**：
+      ("tasks.json", "tasks-p2.json", "tasks-p3.json", "tasks-p4.json")
+  P5 新增 tasks-p5.json 后，这份清单没有它 —— 关卡照样报绿 18/18，
+  而 tasks-p5.json 里的证据路径**一条都没被查过**，且输出里没有任何痕迹。
+  与 §16.4 漏登记 `# pragma: no cover` 同族：漏登记的屏蔽会造出假覆盖率，
+  漏登记的清单会造出假卫生。
+
+二、改法（不放宽判据，方向与"放宽"相反）
+
+  · glob docs/agent/tasks*.json 自动发现，排序保证输出稳定；
+  · 新增下限自检「找到 ≥4 份阶段任务清单」—— 文件名被改/被搬走/glob 写错都会红；
+  · 字段语义更准：evidence = 已留档（G13 查它）／planned_evidence = 打算留到哪（不查）。
+    于是"把任务标 done"有了可检查的含义：**证据必须先从 planned 挪进 evidence**。
+  关卡 18 项 → 20 项。证据：docs/agent/evidence/p5/g13_hygiene.txt
+
+  顺带修掉一个证据生成坑：PowerShell 的 `*>>` 默认写 UTF-16LE，与 UTF-8 正文混在一起
+  中文会乱码（第一次生成 g13_hygiene.txt 时就踩到了）。改为用 Python 以 utf-8
+  文本模式重定向子进程输出，编码才是确定的。
+
+三、13 关验收（原始输出在 docs/agent/evidence/acceptance/ 与 SUMMARY.md）
+
+  内部关卡 6/7（唯一未过的是 G13，原因是**本轮改动尚未提交**，工作区不干净 ——
+  提交后单独复跑转绿，见 p5/g13_hygiene.txt）；
+  外部依赖关卡 6/6 退出码 0，且本轮**零跳过**：
+  G2 2668 passed / 1 skipped · G3 7238 语句 0 未覆盖 100% ·
+  G4 18/18 · G5 44/44 · G7 113/113 · G8 20/20（0 跳过）·
+  G9 35/35 · G10 32/32 · G11 16/16 · G12 50/50（失败 0 降级 0）。

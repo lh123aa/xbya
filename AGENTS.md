@@ -164,7 +164,7 @@ xiaoyi-vrm-worktree/
 │
 ├── tools/                           ← 验收与运维脚本
 │   ├── run_acceptance.py            # 一次跑完 13 关（G1~G13）+ 逐关留原始输出
-│   ├── check_repo_hygiene.py        # G13：版本控制/忽略规则/密钥/模板落后/证据路径（18 项）
+│   ├── check_repo_hygiene.py        # G13：版本控制/忽略规则/密钥/模板落后/证据路径（20 项）
 │   ├── prepare_manual_acceptance.py # 人工验收：建沙箱+临时改白名单+打印第 1 句
 │   ├── check_manual_evidence.py     # 人工验收：证据与结论齐不齐
 │   ├── reminders_cli.py             # 提醒状态文件的读写（跨进程验收入口/运维）

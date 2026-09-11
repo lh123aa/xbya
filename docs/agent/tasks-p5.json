@@ -72,12 +72,12 @@
       "priority": "P1",
       "title": "D16 守护：把注册表 schema 直接喂给 chat_with_tools 必须显式拒绝或自动纠正",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/d16_schema_shape.txt"
-      ],
       "acceptance": [
         "不得静默产生无名工具",
         "两种形制要么统一、要么由类型/断言约束"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/d16_schema_shape.txt"
       ]
     },
     {
@@ -85,12 +85,12 @@
       "priority": "P1",
       "title": "voice_service 加载 ASR 时透传 params（与 core/app.py 行为一致）",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/voice_service_params.txt"
-      ],
       "acceptance": [
         "两条加载路径行为一致",
         "用例断言 ASR 参数确实透传（model_size / initial_prompt 不再静默失效）"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/voice_service_params.txt"
       ]
     },
     {
@@ -98,12 +98,12 @@
       "priority": "P1",
       "title": "真 ST 嵌入器 + vec0 端到端：384 维写入与检索，维度变化时索引被重建",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/st_vec0_e2e.txt"
-      ],
       "acceptance": [
         "真模型写入一条记忆并检索回来",
         "维度变化时索引被重建且如实报告"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/st_vec0_e2e.txt"
       ]
     },
     {
@@ -111,12 +111,12 @@
       "priority": "P1",
       "title": "ASR medium/small 长句对比（补 C2 只测短句的缺口）",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/asr_long_sentence.txt"
-      ],
       "acceptance": [
         "同一批长句在 small/medium 下对比并给出数字",
         "结论允许是「差异不明显」"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/asr_long_sentence.txt"
       ]
     },
     {
@@ -124,12 +124,12 @@
       "priority": "P1",
       "title": "C4 解析器离线 fixture：必应/百度/谷歌形态 SERP 各一份",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/serp_parser.txt"
-      ],
       "acceptance": [
         "fixture 取自真实抓到的 HTML（evidence/p4/_tmp_c4_raw_*.html），不是手写",
         "对必应能解析；对百度/谷歌形态给出如实结论"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/serp_parser.txt"
       ]
     },
     {
@@ -139,7 +139,7 @@
       "state": "human",
       "minimal_path": "厂商控制台各生成新 key → 覆盖 config.yaml 的 api_key 与 fallback_api_key → python tools/probe_llm_capability.py --engine universal",
       "why_ai_cannot": "没有厂商控制台权限",
-      "evidence": [
+      "planned_evidence": [
         "docs/agent/evidence/p5/key_rotation.txt"
       ]
     },
@@ -198,17 +198,38 @@
     },
     {
       "id": "P5-AUDIT",
+      "priority": "P1",
+      "title": "G13 证据路径检查：清单改为自动发现 tasks*.json（原先写死四个文件名）",
+      "state": "fixed",
+      "why": "加 tasks-p5.json 后这条检查悄悄不生效 —— 关卡照样全绿，而「新阶段没人查」没有任何提示（与 §16.4 漏登记 pragma 同族的「沉默失明」）",
+      "evidence": [
+        "tools/check_repo_hygiene.py",
+        "docs/agent/evidence/p5/g13_hygiene.txt"
+      ],
+      "acceptance": [
+        "清单自动发现 + 「至少 4 份」下限自检（文件名被改/被搬走会红）",
+        "tasks-p5.json 的已留档证据被逐条检查；未留档的走 planned_evidence（不查）",
+        "关卡从 18 项变 20 项，且两次计数都能在原始输出里核对"
+      ]
+    },
+    {
+      "id": "P5-AUDIT-CLOSURE",
       "priority": "P2",
       "title": "收口审计：四条终态逐条可查 + 完成度说明连口径",
       "state": "pending",
-      "evidence": [
-        "docs/agent/evidence/p5/closure_audit.txt"
-      ],
       "acceptance": [
         "逐条列出每项的终态与证据路径",
         "13 关验收内部 7/7、外部 6/6，留原始输出",
         "无「以后再说」类措辞残留"
+      ],
+      "planned_evidence": [
+        "docs/agent/evidence/p5/closure_audit.txt"
       ]
     }
-  ]
+  ],
+  "evidence_field_semantics": {
+    "evidence": "已经留档的证据路径（必须真实存在；G13 会逐条检查）",
+    "planned_evidence": "打算留到哪（尚未落档；G13 不查）—— 任务标 done 时必须先挪进 evidence",
+    "why": "G13 原先写死四个 tasks 文件名，新阶段加进来会悄悄不生效；改成自动发现后，未完成任务的计划路径会让关卡常红。解决方式是让字段语义更准，而不是放宽检查。"
+  }
 }
