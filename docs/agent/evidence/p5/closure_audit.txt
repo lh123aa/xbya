@@ -1,0 +1,97 @@
+# P5 收口审计（P5-AUDIT-CLOSURE）
+
+生成时间：2026-09-11 09:49:50
+
+> 本文件是**可复跑**的：`python docs/agent/evidence/p5/_tmp_closure_audit.py`
+> 它不产生结论，只逐条把事实列出来 —— 结论要么被这些行支持，要么不成立。
+
+## 一、逐条终态与证据
+
+| 编号 | 终态 | 证据（已留档，逐条核对是否存在） | 计划证据（未留档，不查） |
+|------|------|-----------------------------------|--------------------------|
+| P5-A1 | ✅ 已完成 | ✔ `docs/agent/f-closure.md`<br>✔ `AGENTS.md` | （无） |
+| P5-A2 | ✅ 已修 | ✔ `docs/agent/evidence/p5/g1_py_compile.txt`<br>✔ `docs/agent/evidence/p5/g2_g3_tests_coverage.txt`<br>✔ `docs/agent/evidence/p5/d17_plan_param_validation.txt` | （无） |
+| P5-A3 | ✅ 已完成 | ✔ `AGENTS.md`<br>✔ `docs/agent/p5-closure-plan.md` | （无） |
+| P5-B1 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/d16_schema_shape.txt` |
+| P5-B2 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/voice_service_params.txt` |
+| P5-B3 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/st_vec0_e2e.txt` |
+| P5-B4 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/asr_long_sentence.txt` |
+| P5-B5 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/serp_parser.txt` |
+| P5-C1 | 🟡 待人工 | （无） | `docs/agent/evidence/p5/key_rotation.txt` |
+| P5-C2 | 🟡 待人工 | ✔ `docs/agent/evidence/manual/` | （无） |
+| P5-C3 | ⬜ 明确不做 | （无） | （无） |
+| P5-C4 | ⬜ 明确不做 | （无） | （无） |
+| P5-C5 | ⬜ 明确不做 | （无） | （无） |
+| P5-C6 | ⬜ 明确不做 | （无） | （无） |
+| P5-C7 | ⬜ 明确不做 | （无） | （无） |
+| P5-C8 | ⬜ 明确不做 | （无） | （无） |
+| P5-AUDIT | ✅ 已修 | ✔ `tools/check_repo_hygiene.py`<br>✔ `docs/agent/evidence/p5/g13_hygiene.txt` | （无） |
+| P5-AUDIT-CLOSURE | ✅ 已完成 | ✔ `docs/agent/evidence/p5/closure_audit.txt` | （无） |
+
+## 二、终态分布（四种终态，没有第五种）
+
+| 终态 | 项数 |
+|------|------|
+| ⬜ 明确不做 | 6 |
+| ⏳ 未到终态 | 5 |
+| ✅ 已完成 | 3 |
+| ✅ 已修 | 2 |
+| 🟡 待人工 | 2 |
+| **合计** | **18** |
+
+已留档证据缺失数：**0**（全部存在）
+
+## 三、非终态措辞扫描（正反两个方向都要防）
+
+扫的文件：`AGENTS.md`、`docs/agent/p5-closure-plan.md`、`docs/agent/f-closure.md`、`docs/agent/p4-history.md`、`docs/agent/acceptance-history.md`
+
+- 「以后再说」 → ✘ 有：docs/agent/p5-closure-plan.md:15
+- 「待定」 → ✔ 无
+- 「后续再看」 → ✔ 无
+- 「以后再补」 → ✔ 无
+- 「暂不处理」 → ✔ 无
+- 「有时间再说」 → ✔ 无
+
+## 四、门禁原样复跑
+
+### G13 仓库卫生（20 项）
+
+```
+========================================================================
+仓库卫生自检（P4-A1 / G13）
+========================================================================
+[PASS] 在真正的 git 工作区内  → rev-parse → 'true'
+[PASS] `.git` 是目录（不是 worktree 指针文件）
+[PASS] 至少有一次提交  → 22 个提交
+[PASS] 没有遗留的 stash  → 空
+[FAIL] 工作区干净（排除验收证据目录）  → 2 项未提交：[' M AGENTS.md', ' M docs/agent/tasks-p5.json']
+[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 235
+[PASS] 没有被禁文件进入版本库  → 全部合规
+[PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
+[PASS] config.example.yaml 存在
+[PASS] 配置模板无明文密钥  → 0 处
+[PASS] 配置模板未落后于实现（顶层键覆盖齐全）  → 模板顶层键覆盖：齐全 ✅（config.yaml 有 6 个顶层键，模板有 6 个）
+[PASS] 忽略规则：config.yaml 应被忽略  → 被忽略
+[PASS] 忽略规则：data/任意文件.db 应被忽略  → 被忽略
+[PASS] 忽略规则：models/任意.ckpt 应被忽略  → 被忽略
+[PASS] 忽略规则：.coverage 应被忽略  → 被忽略
+[PASS] 忽略规则：logs/任意.log 应被忽略  → 被忽略
+[PASS] 忽略规则：docs/agent/evidence/voice/fixtures/任意.wav 不应被忽略  → 未忽略
+[PASS] 找到 ≥4 份阶段任务清单（tasks*.json）  → 实际 5 份：['tasks-p2.json', 'tasks-p3.json', 'tasks-p4.json', 'tasks-p5.json', 'tasks.json']
+[跳过] tasks-p2.json 里没有带 evidence 的任务，无可查
+[跳过] tasks-p3.json 里没有带 evidence 的任务，无可查
+[PASS] tasks-p4.json 里声明的证据路径都存在  → 查了 13 条
+[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 11 条
+[跳过] tasks.json 里没有带 evidence 的任务，无可查
+------------------------------------------------------------------------
+仓库卫生自检：19/20 通过，1 失败
+  [FAIL] 工作区干净（排除验收证据目录）
+========================================================================
+[exit] 1
+```
+
+### 全量回归 + 覆盖率（读最近一次留档 g2_g3_tests_coverage.txt）
+
+```
+```
+

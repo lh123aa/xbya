@@ -70,3 +70,39 @@
 ========================================================================
 
 [exit] 1
+
+生成时间：2026-09-11 09:55:44
+命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xiaoyi-vrm-worktree）
+
+========================================================================
+仓库卫生自检（P4-A1 / G13）
+========================================================================
+[PASS] 在真正的 git 工作区内  → rev-parse → 'true'
+[PASS] `.git` 是目录（不是 worktree 指针文件）
+[PASS] 至少有一次提交  → 22 个提交
+[PASS] 没有遗留的 stash  → 空
+[FAIL] 工作区干净（排除验收证据目录）  → 2 项未提交：[' M AGENTS.md', ' M docs/agent/tasks-p5.json']
+[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 235
+[PASS] 没有被禁文件进入版本库  → 全部合规
+[PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
+[PASS] config.example.yaml 存在
+[PASS] 配置模板无明文密钥  → 0 处
+[PASS] 配置模板未落后于实现（顶层键覆盖齐全）  → 模板顶层键覆盖：齐全 ✅（config.yaml 有 6 个顶层键，模板有 6 个）
+[PASS] 忽略规则：config.yaml 应被忽略  → 被忽略
+[PASS] 忽略规则：data/任意文件.db 应被忽略  → 被忽略
+[PASS] 忽略规则：models/任意.ckpt 应被忽略  → 被忽略
+[PASS] 忽略规则：.coverage 应被忽略  → 被忽略
+[PASS] 忽略规则：logs/任意.log 应被忽略  → 被忽略
+[PASS] 忽略规则：docs/agent/evidence/voice/fixtures/任意.wav 不应被忽略  → 未忽略
+[PASS] 找到 ≥4 份阶段任务清单（tasks*.json）  → 实际 5 份：['tasks-p2.json', 'tasks-p3.json', 'tasks-p4.json', 'tasks-p5.json', 'tasks.json']
+[跳过] tasks-p2.json 里没有带 evidence 的任务，无可查
+[跳过] tasks-p3.json 里没有带 evidence 的任务，无可查
+[PASS] tasks-p4.json 里声明的证据路径都存在  → 查了 13 条
+[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 11 条
+[跳过] tasks.json 里没有带 evidence 的任务，无可查
+------------------------------------------------------------------------
+仓库卫生自检：19/20 通过，1 失败
+  [FAIL] 工作区干净（排除验收证据目录）
+========================================================================
+
+[exit] 1

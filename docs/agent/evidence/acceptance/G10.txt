@@ -1,12 +1,12 @@
 # 关卡: G10 F7 真实生产力服务
 # 命令: C:\Python312\python.exe tools/verify_f7_real_services.py
-# 用时: 16.0s
+# 用时: 14.7s
 # 退出码: 0
 # 外部依赖: 是
 ------------------------------------------------------------------------
 ========================================================================
 F7 真实服务验证（translate / weather / reminder）
-时间: 2026-09-11 09:46:58
+时间: 2026-09-11 09:54:36
 ========================================================================
 
 [F7-a] 三个能力服务是否真的接上了
@@ -19,16 +19,16 @@ F7 真实服务验证（translate / weather / reminder）
 
 [F7-b] translate 走真实 LLM
 [PASS] translate 已注册
-  (2402ms) success=True
-  summary: "翻成英文是：今天的天气很好，我们去公园散步吧。(Today the weather is nice, let's go for a walk in the park.)"
+  (1074ms) success=True
+  summary: "翻成英文是：The weather is nice today, let's go for a walk in the park."
 [PASS] translate 不再回'还没接上翻译能力'
-[PASS] 拿到了译文  → "今天的天气很好，我们去公园散步吧。(Today the weather is nice, let's go for a walk in th"
-[PASS] 译文是英文（含 ASCII 字母）  → 今天的天气很好，我们去公园散步吧。(Today the weather is nice, let's go for a 
-[PASS] 装饰性前缀/引号已清洗  → 今天的天气很好，我们去公园散步吧。(Today the weather is nice, let's
+[PASS] 拿到了译文  → "The weather is nice today, let's go for a walk in the park."
+[PASS] 译文是英文（含 ASCII 字母）  → The weather is nice today, let's go for a walk in the park.
+[PASS] 装饰性前缀/引号已清洗  → The weather is nice today, let's go for a walk in 
 
 [F7-c] weather 走真实 Open-Meteo
 [PASS] weather 已注册
-  (1300ms) success=True
+  (1179ms) success=True
   summary: '上海，多云，28度，22~28度'
 [PASS] weather 不再回'还没接上天气服务'
   data: {'city': '上海', 'desc': '多云', 'temp': 28, 'temp_range': '22~28度'}
@@ -41,9 +41,9 @@ F7 真实服务验证（translate / weather / reminder）
 [F7-d] reminder 到点真的发事件（「不撒谎」的直接证据）
 [PASS] reminder 已注册
 [PASS] 提醒设置成功  → 好的，马上我会提醒你喝水
-  提醒 id=rem-19 到期时间=马上
+  提醒 id=rem-21 到期时间=马上
 [PASS] 提醒进入待触发队列  → pending=1
-  收到事件: {'reminder_id': 'rem-19', 'what': '喝水', 'text': '提醒你喝水'}
+  收到事件: {'reminder_id': 'rem-21', 'what': '喝水', 'text': '提醒你喝水'}
 [PASS] 到点发出了 reminder.due 事件（不再是空承诺）
 [PASS] 事件带对了提醒内容  → 喝水
 [PASS] 事件带可播报文案  → 提醒你喝水
@@ -52,9 +52,9 @@ F7 真实服务验证（translate / weather / reminder）
 
 [F7-e] 提醒跨进程不丢（D13：关掉程序再打开，提醒还在）
 [PASS] 提醒状态文件路径可解析  → data\agent_reminders.json
-  进程A add   : exit=0 已设置 rem-20 | 30分钟后 | 跨进程喝水
-[PASS] 进程A 设置提醒成功  → 已设置 rem-20 | 30分钟后 | 跨进程喝水
-  进程B list  : exit=0 待提醒 1 条 / rem-20 | 30分钟后 | 跨进程喝水
+  进程A add   : exit=0 已设置 rem-22 | 30分钟后 | 跨进程喝水
+[PASS] 进程A 设置提醒成功  → 已设置 rem-22 | 30分钟后 | 跨进程喝水
+  进程B list  : exit=0 待提醒 1 条 / rem-22 | 30分钟后 | 跨进程喝水
 [PASS] 进程B（另起的进程）读得到那条提醒 —— 重启不丢  → 读到了
   进程C clear : exit=0 共取消 1 条
 [PASS] 进程C 清理测试提醒成功

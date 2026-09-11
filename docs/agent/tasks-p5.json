@@ -16,7 +16,7 @@
       "id": "P5-A1",
       "priority": "P0",
       "title": "账本不再说谎：刷新 f-closure.md §17.4 的 7 处落后 + 写出「完成度（连口径）」一节",
-      "state": "pending",
+      "state": "done",
       "why_p0": "不做完它，「完全闭环」这个结论无法被检验",
       "evidence": [
         "docs/agent/f-closure.md",
@@ -57,10 +57,11 @@
       "id": "P5-A3",
       "priority": "P0",
       "title": "B1 终态登记：EventBus 适配层「明确不做」+ 3 条理由",
-      "state": "pending",
+      "state": "done",
       "why_p0": "它决定「闭环」能不能宣告；且必须写进债务表才叫终态",
       "evidence": [
-        "AGENTS.md"
+        "AGENTS.md",
+        "docs/agent/p5-closure-plan.md"
       ],
       "acceptance": [
         "D14 行写明「守护已交付 + 适配层明确不做」并附 3 条理由",
@@ -216,13 +217,13 @@
       "id": "P5-AUDIT-CLOSURE",
       "priority": "P2",
       "title": "收口审计：四条终态逐条可查 + 完成度说明连口径",
-      "state": "pending",
+      "state": "done",
       "acceptance": [
         "逐条列出每项的终态与证据路径",
         "13 关验收内部 7/7、外部 6/6，留原始输出",
         "无「以后再说」类措辞残留"
       ],
-      "planned_evidence": [
+      "evidence": [
         "docs/agent/evidence/p5/closure_audit.txt"
       ]
     }
