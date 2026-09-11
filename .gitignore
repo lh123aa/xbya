@@ -13,6 +13,14 @@ dist/
 config.yaml
 config/api_keys.yaml
 
+# 配置备份。为什么必须忽略：`config.yaml` 本身已被忽略，但它的**备份副本**
+# （config.yaml.before_*、config.yaml.manual_backup）是不同文件名，
+# 不在忽略范围内 —— 而它们**含有明文 API 密钥**，一次 `git add -A` 就会进历史。
+# G13 的密钥扫描只查"已跟踪内容"，拦不住"还没被跟踪但即将加进去"的文件，所以在这里堵。
+config.yaml.before_*
+config.yaml.manual_backup
+config.yaml.bak*
+
 # Agent 层运行时状态（实体栈 / 审计库 / 记忆库 / 提醒库 —— 全是运行时产物，不入库）
 # P4-A1 勘误：原先只列了 agent_entities.json 与 agent_audit.db 两个文件，
 # 而 P3 新增的 data/agent_memory.db（1.6MB）与 P4-A2 将要写的 data/agent_reminders.json

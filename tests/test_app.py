@@ -71,14 +71,33 @@ class TestAppRun:
     def test_run_injects_app_and_loads_pet(self, monkeypatch):
         """run()创建宠物窗口、注入应用、加载宠物并显示"""
         created = self._patch_window(monkeypatch)
+        # 加载哪个角色由配置 ui.pet_sprite 决定 —— 以前这里写死 "cat"，
+        # 于是"换个角色"必然让这条用例变红（硬编码耦合）。
+        # 这里用 monkeypatch 覆盖 get()，既验证了"读配置"，也不依赖 config.yaml 当前内容。
+        #
+        # ⚠️ 为什么不能用「改内存字典」或 config_manager.set()：
+        #   config_manager.set() 内部会 _save_config() **整体写盘**；
+        #   更要命的是 `core/app.py` 启动时自己就会调 set("system.perf_evaluated", ...)，
+        #   于是任何**内存里改过的值都会在启动那一刻被顺手持久化到真实 config.yaml**。
+        #   本条用例第一版就是这样把 config.yaml 里的 pet_sprite 写成了 "unit_pet"（实测踩过）。
+        #   monkeypatch 只拦 get()，不产生副作用，且测试结束自动还原。
+        # 打**类方法**而不是实例方法：config_manager 是在 initialize() 里才建的，
+        # 此处在它之前拿不到实例；打类上，之后新建的实例一样被拦住。
+        from core.config_manager import ConfigManager
+        _orig_get = ConfigManager.get
+        monkeypatch.setattr(
+            ConfigManager, "get",
+            lambda self, key, default=None: (
+                "unit_pet" if key == "ui.pet_sprite" else _orig_get(self, key, default)),
+        )
         self.app.initialize()
-        
+
         self.app.run()
-        
+
         assert len(created) == 1
         win = created[0]
         assert win.app is self.app
-        assert win.loaded == "cat"
+        assert win.loaded == "unit_pet"
         assert win.shown is True
         # finally中调用了shutdown
         assert self.app._running is False

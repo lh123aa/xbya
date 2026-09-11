@@ -1,0 +1,19 @@
+{
+  "sandbox": "C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_manual",
+  "dirs": [
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Pictures"
+  ],
+  "seeded": [
+    "Desktop/验收合同_2025.pdf",
+    "Desktop/验收截图_01.png",
+    "Desktop/验收截图_02.png",
+    "Desktop/验收报告.pdf",
+    "Desktop/验收笔记.txt",
+    "Documents/验收文档.txt",
+    "Downloads/验收压缩包.zip",
+    "Pictures/验收图片_01.png"
+  ]
+}

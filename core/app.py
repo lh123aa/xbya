@@ -676,13 +676,22 @@ class XiaoyiApp:
             pet_window = PetWindow()
             self.pet_window = pet_window  # 供设置/其他模块引用（如快捷键重绑）
             pet_window.set_app(self)
-            pet_window.load_pet("cat")
-            
-            # 启用 VRM 渲染（必须先于 show()！show 后添加原生子窗口 DWM 合成异常）
-            if hasattr(pet_window, "enable_vrm"):
+            # 精灵图角色名（resources/sprites/<name>/）。以前这里写死 "cat"，
+            # 换角色必须改代码；现在改配置 ui.pet_sprite 即可。
+            _sprite = str(self.config_manager.get("ui.pet_sprite", "cat") or "cat")
+            pet_window.load_pet(_sprite)
+            logger.info(f"精灵图角色: {_sprite}")
+
+            # 渲染模式由配置决定（以前恒为 vrm —— 配置里那一项没人读）
+            _render_mode = str(
+                self.config_manager.get("ui.render_mode", "vrm") or "vrm").lower()
+            if _render_mode == "vrm" and hasattr(pet_window, "enable_vrm"):
+                # VRM 渲染必须先于 show()！show 后添加原生子窗口 DWM 合成异常
                 vrm_model = self.config_manager.get("ui.vrm_model", "assets/vrm/cat.vrm")
                 ok = pet_window.enable_vrm(vrm_model)
                 logger.info(f"VRM渲染: {'已启用' if ok else '未启用(降级精灵图)'}")
+            else:
+                logger.info(f"渲染模式: sprite（配置 ui.render_mode={_render_mode}）")
             
             pet_window.show()
             

@@ -82,6 +82,14 @@ class ConfigManager:
         },
         "ui": {
             "pet_size": 200,
+            # 精灵图角色目录名（resources/sprites/<pet_sprite>/）。
+            # 默认 "cat" 保持改动前行为；换成自己的角色只需改这一项。
+            "pet_sprite": "cat",
+            # 渲染模式：sprite（2D 序列帧）| vrm（3D 模型）。
+            # 注意：以前这一项**从未被读取** —— PetWindow.render_mode 硬编码为 "sprite"，
+            # 配置里写 vrm 只是碰巧因为 app.py 无条件调 enable_vrm() 才生效。
+            # 现在 app.py 会按它决定是否启用 VRM，配置与行为一致。
+            "render_mode": "sprite",
             "fps": {
                 "low": 15,
                 "medium": 30,

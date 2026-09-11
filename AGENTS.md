@@ -307,7 +307,9 @@ class RuleRouter(RouterService):
 
 | **D19** | **`vad_filter=True` 在部分长音频上静默截断** | `plugins/asr/faster_whisper/plugin.py:105` 硬编码 `vad_filter=True`（**不可配置**），VAD 把音频后半段判成噪音直接切掉 | 用户说一句长指令，产品**只听前半句**就去执行 —— 而且**看不出来**：残缺文本与原句前缀天然相似，按相似度判据甚至可能比完整版「更高分」。实测 30 次调用命中 1 次（medium、8.26s 音频只覆盖 3.03s = 39%）| 🟡 **终态：已实测定性，默认值处置待人工（P5-B4，2026-09-11）**。① **已测**：`evidence/p5/asr_long_sentence.txt` 第二~八节记录完整归因链（先排除合成截断与静音，再定位到 VAD，判据是「`vad=on` 片段末点 < 音频时长−1.0s **且** `vad=off` 末点 ≥ 音频时长−1.0s」）。② **为什么不直接改默认值**：实测关掉 VAD 后 `small` 会在低幅白噪上幻觉出「字幕by索兰娅」（原本为空）—— 改 `False` 是把「长句截断」换成「噪音被听成话」，两者都是用户可见故障。③ **最小操作路径（人工）**：用**真实房间噪声**录音跑一遍 vad on/off 对照（合成噪音不能替代，本机无此录音），据此决定是 (a) 保留 VAD 但加「转写覆盖率异常」告警、(b) 把 `vad_filter` 提为可配置项并在配置里显式选、还是 (c) 维持现状。④ **可判定判据**：真实噪声下 vad=off 的**误听率**与 vad=on 的**截断率**两个数字同时给出，才能做取舍 —— 只报一个不够。⑤ **措辞边界**：这是**低频**缺陷（1/30 样本），**不足以给出发生率**，只能说「确实会发生」；且它**与 small/medium 档位无关**（两档共用该参数）|
 
-| **D20** | **验收脚本把「外部配额用尽」报成「产品的 function calling 失败」** | `tools/verify_f3_real_llm.py` 的 `[F3-a]` 段两条工具调用断言（「真实函数调用返回了工具名」「选中的工具在 schema 清单内」）**没有查配额观察器**，429 一律记 FAIL；而同文件的规划器那条早就用 `skipped()` 处置过 | 免费档 8000 TPM 用尽时，G8 会报 **2 个 FAIL**，读起来是「function calling 坏了」——而真相是「模型根本没被问到」。更糟的是同一次运行的汇总还印着「凡受此影响的断言都已归入 [SKIP]，**没有**被算成通过」——**验收脚本替自己做了一句不成立的声明**（该次明明有 2 个 FAIL）。与 P4 那 7 处「检查本身出错」同族，也属「纸面满足」 | ✅ **已修（P5-C1 轮次，2026-09-11）**：调用前后各记一次 `len(quota.hits)`，只有「返回 `None` **且**这次调用期间真的抓到 429」才降级为 `skipped()`。**反方向核查过不是空转**：① `_QuotaWatch` 行为逐条核对 **7/7**（只认 429/限流/配额，**401/403 不认** —— 否则「key 失效」会被悄悄跳过，比原 bug 更坏）；② 真值表四行证明 `probe is None` 但无 429 时**仍报 FAIL**，没有把所有失败都放过；③ 现场对照：同代码同脚本，配额用尽时 `16/18（2 FAIL）`，配额恢复后一字未改重跑 `17/17（0 FAIL, 1 SKIP）`。证据 `docs/agent/evidence/p5/g8_quota_skip.txt`。**已知局限（未修）**：`_QuotaWatch` 靠**日志文本**匹配，厂商改文案就会失明；结构性修法是让插件把状态码作为字段往上抛，改动面更大 |
+| **D21** | **`ConfigManager.set()` 会把「整份内存配置」落盘，含合并进来的默认值与任何程序化改动** | `config_manager.py:204` 的 `set()` 末尾无条件 `self._save_config()`，而 `_save_config()` 是 `yaml.dump(self.config)` **整份写**。于是：① 任何**内存里被改过**的值都会在下一次 `set()` 被顺手持久化；② `_merge_config()` 补进来的默认键也被写进文件；③ **注释全被 `yaml.dump` 吃掉**（本项目 `config.yaml` 的注释是给人看的重要信息）。触发点现成就有：`core/app.py:147` 启动时必调 `set("system.perf_evaluated", True)` | 我在改 `tests/test_app.py` 时**实测踩中**：测试为钉住 `ui.pet_sprite` 而直接改了内存字典，随后 `app.run()` 里那句 `set(...)` 把测试值 **`unit_pet` 写进了真实 `config.yaml`**，并且整个文件被重排、注释丢失。这与 P5-C1 轮次那次「配置被打坏」同族（都是"配置被静默回写"），但机理不同：那次是**写坏了 YAML 语法**导致回退默认值，这次是**语法合法但内容被污染** —— 更隐蔽，因为程序照常能跑，只有盯着文件才看得出 | 🟡 **本轮已做两件事，根因未修（登记见下）**：① **测试侧堵住**：`test_run_injects_app_and_loads_pet` 改为用 `monkeypatch.setattr(ConfigManager, "get", ...)` 拦读，不碰内存字典；并加了「改完比对 MD5，确认 `config.yaml` 未被改动」的现场核对（**实测通过**）。② **`config.yaml` 已恢复**（219 行，6 个顶层键、密钥长度、`path_whitelist`、`agent.plugins` 13 项逐条核对）。**根因未修的理由**：把 `set()` 改成"只改内存、显式 `save()` 才落盘"是**行为变更**，而 `set()` 的现有调用点（`ui/pet_window.py` 四处菜单开关、`core/app.py` 一处）目前都**依赖"改完即持久化"**才在重启后保留 —— 直接改会让这些开关变得重启即失效。正确的做法是**先给调用点补上显式 `save()`**，再收窄 `set()`；那是独立一轮的改动面，不塞进本轮。判据：改完后「切换字幕开关 → 重启 → 仍生效」且「测试跑完 `config.yaml` 的 MD5 不变」两条同时成立。另外 `.gitignore` 已补 `config.yaml.before_*` / `config.yaml.manual_backup`（**这些备份含明文密钥**，而 G13 的密钥扫描只管已跟踪内容，拦不住"即将被 `git add -A` 加进去"的文件） |
+| **D22** | **`ui.render_mode` 这个配置项从未被读取** | `PetWindow.render_mode` 在 `ui/pet_window.py:124` **硬编码为 `"sprite"`**，全仓再无一处读 `ui.render_mode`；而 `core/app.py` 启动时**无条件**调 `enable_vrm()`。于是配置里写 `vrm` 只是"碰巧因为无条件调用而生效"，写 `sprite` 也**关不掉** VRM —— 配置与行为不一致 | 用户把 `ui.render_mode` 设成 `sprite` 却仍然显示 3D 模型时，**没有任何报错**，只能靠读代码发现；反过来想"只换精灵图不换渲染模式"也无从表达。属本项目反复出现的同一族：**配置项看起来存在、实际不接线** | ✅ **已修（本轮）**：`core/app.py` 改为按 `ui.render_mode` 决定是否 `enable_vrm()`，非 `vrm` 时打印「渲染模式: sprite（配置 ui.render_mode=…）」；`core/config_manager.DEFAULT_CONFIG` 补上 `ui.render_mode`（默认 `sprite`，与硬编码原值一致）与 `ui.pet_sprite`（默认 `cat`）。**真机验证**：`tools/verify_gui_launch.py` **16/16**，日志实测输出 `精灵图角色: xinya` / `渲染模式: sprite（配置 ui.render_mode=sprite）` / `加载宠物: xinya, 10个动画` |
+| **D23** | **宠物角色名写死在 `core/app.py`：`pet_window.load_pet("cat")`** | 与 D22 同族，同一行代码的另一个后果 | 换角色必须改代码、重跑测试；而 `tests/test_app.py:81` 又把这个字符串**断言死了**（`win.loaded == "cat"`），于是"换角色"这件事在测试层面被永久锁住 —— 本轮把配置改成 `xinya` 时，这条用例立刻变红（**它红得对，是断言本身在拦**） | ✅ **已修（本轮）**：`core/app.py` 改读 `ui.pet_sprite`；`tests/test_app.py` 那条断言由"写死 `cat`"改为"钉一个测试值再断言读到它"，从**硬编码耦合**变成**验证读配置**（顺带避开 D21 的落盘陷阱）。现场核对：`config.yaml` 在测试前后 **MD5 不变** |
 
 **债务管理原则：**
 - 每项债务必须登记，不允许"隐性债务"
@@ -446,6 +448,18 @@ pending ──▶ in_progress ──▶ verifying ──▶ done
 > 下面只列**键的层级与语义**，取值一律以 `config.yaml` 为准。
 
 ```yaml
+ui:                   # 桌宠外观（2026-09-11 补 —— 本节原先完全没写 ui，
+                      #   这正是 D22「ui.render_mode 从未被读取」能藏那么久的原因：
+                      #   文档里没有这个键，就没人去核对它到底接没接线）
+  render_mode:        # sprite（2D 序列帧）| vrm（3D 模型）。**真的接线了**（D22 已修）
+  pet_sprite:         # 精灵图角色目录名 → resources/sprites/<这个名字>/
+                      #   换角色 = 改这一项，不用改代码（D23 已修）
+  pet_size:           # 宠物窗口边长（px）。128 的画布在 127 下接近 1:1，不缩放
+  vrm_model:          # render_mode=vrm 时的模型路径
+  vrm_yaw_deg:        # 面向镜头的修正角；VRM 0.x 正面朝 +Z、1.0 朝 −Z（见 vrm_facing.txt）
+  always_on_top / subtitle_enabled / subtitle_bg_color / subtitle_fg_color
+  position.x / position.y / fps.{low,medium,high,current}
+
 agent:
   enabled:            # 总开关（false 时全部转闲聊，走原语音管线）
   plugins:            # 插件清单：决定加载哪些插件、以什么顺序（见 §15 与 phases.md §14）
@@ -612,8 +626,11 @@ agent:
 > | D16 形制归一 / D17 计划参数校验 / D18 非字符串 targets | ✅ 已修 |
 > | **D19 `vad_filter` 静默截断** | 🟡 **待人工**（默认值取舍需真实噪声录音） |
 > | **D20 验收脚本把配额报成产品失败** | ✅ **已修**（P5-C1 轮次发现的） |
+> | **D21 `ConfigManager.set()` 整份落盘** | 🟡 **待人工/下轮**（测试侧已堵，根因需连同调用点一起改） |
+> | **D22 `ui.render_mode` 从未被读取** / **D23 角色名写死** | ✅ **已修**（本轮接线 + 真机 16/16） |
 >
 > ⚠️ D19 / D20 都是**本轮执行中查出来的**，不在最初 18 项里 ——
+> D21~D23 又是**再下一轮**查出来的（改角色那一轮）。
 > 这说明"闭环"之后仍可能有新问题，登记表要一直能长大。
 
 > **上表的数字是审计脚本数出来的，不是我数出来的**：`evidence/p5/closure_audit.txt`
