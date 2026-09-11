@@ -1,0 +1,62 @@
+P5-B2：语音服务加载 ASR/TTS 时透传 params（修掉一处静默失效）
+
+一、缺陷：两条加载路径取参数不一致，而且是静默的
+
+  同一个 ASR 插件有两条加载路径：
+
+    · core/app.py::_load_plugins        → plugin_loader.load(engine, params=plugin_params)  ✅
+    · services/voice_service.py         → plugin_loader.load(asr_engine)                     ❌
+
+  而 PluginLoader.load(name, params=None) 在 params 为空时走 plugin_class() ——
+  **一个配置都不带**。于是 config.yaml 里的
+
+      plugins.asr.params.model_size: medium
+      plugins.asr.params.initial_prompt: "算了 不用了 停止 取消 确定 确认"
+
+  在语音服务这条路径上**完全没被读到**，插件退回自己 __init__ 的默认值
+  （model_size="base"、initial_prompt=""）。日志里只写「ASR插件加载成功:
+  faster_whisper」—— 没有告警、没有错误，只是安静地用错配置。
+
+  这解释了 P4-C2 那条一直没讲通的旧记录：**「config 写 medium，回环实际用 small」**。
+  回环脚本走语音服务这条路径，它拿到的从来就不是 config 里的值。
+  （P4-B5 花了一整轮加进去的解码偏置，在这条路径上同样是空的。）
+
+二、修法：把"取插件参数"这条判据收敛到一处
+
+  新增 core/plugin_params.py::plugin_params(config_manager, plugin_type, engine_name)，
+  core/app.py 与 services/voice_service.py **都用它**：
+
+    · plugins.<type>.params 是参数唯一来源；
+    · 唯一特例保留：llm + openai_api 并上 plugins.llm.cloud（cloud 覆盖 params）；
+    · 返回**新字典**（调用方随手改不会污染配置管理器），且永不为 None。
+
+  为什么不是"两边各写一遍"：这是本项目反复吃过的亏（D16 的同族）——
+  **同一判据写两份一定会漂移**，而漂移的表现恰好是"某一条路径悄悄不工作"，
+  正是这里发生的事。voice_service 的 TTS 分支也顺手改成同一取法（原先直接取
+  asr/tts 的 params，没有 cloud 特例，逻辑与 app 不同源）。
+
+三、证据（docs/agent/evidence/p5/voice_service_params.txt）
+
+  探针把 PluginLoader.load 换成只记录 kwargs 的假实现，再跑 VoiceService.initialize()，
+  如实反映**真实调用点传了什么**（假实现不加载模型，毫秒级）：
+
+    甲 已修：load('faster_whisper', params={model_size: 'medium',
+             initial_prompt: '算了 不用了 停止 取消 确定 确认',
+             device: 'cpu', compute_type: 'int8'})  → ✅
+    乙 反向：把 params=asr_params 拿掉后同一个探针报
+             「❌ ASR 加载**没有传 params**」→ 证明这条证据抓得住，不是空转
+    丙 复原：try/finally 复原后复跑 ✅
+
+  单元测试 tests/test_voice_service_params.py（11 项）：逐键相等、偏置与 model_size
+  不丢、缺 params 返回 {} 而非 None、返回值是**新字典**、llm+openai_api 特例仍在、
+  以及**源码断言**"不许再出现不带 params 的 ASR 加载"（那种写法在行为上"能跑"，
+  所以只有源码断言抓得住 —— 与 D16 的守卫同一思路）。
+
+四、门禁
+
+  · G1 语法：通过
+  · G2 全量回归：2705 passed / 1 skipped / 0 failed（新增 11 项用例）
+  · G3 覆盖率：口径内 7238 语句 0 未覆盖 100%
+  · 端到端：P1 18/18、P3 44/44、指标 8/8
+  · G13：提交前 19/20（工作区不干净）→ 提交后 20/20
+  · 完成度表数字继续由 _tmp_sync_completion_numbers.py 从证据里读（本次 2694 → 2705）

@@ -20,6 +20,7 @@ from core.hardware_detector import get_hardware_detector, HardwareDetector
 from core.event_bus import get_event_bus, EventBus, EventType
 from core.temp_manager import get_tmp_dir, TmpCleaner
 from services.hotkey_manager import HotkeyManager
+from core.plugin_params import plugin_params as plugin_params_for
 from plugins.llm.tool_schemas import ToolSchemaError
 
 logger = logging.getLogger(__name__)
@@ -198,12 +199,13 @@ class XiaoyiApp:
             engine_name = self.config_manager.get(f"plugins.{plugin_type}.engine")
             
             if engine_name and engine_name != "null":
-                # 获取插件配置参数
-                # 云端 LLM（openai_api）：使用 plugins.llm.cloud 参数（base_url/api_key/model）
-                plugin_params = self.config_manager.get(f"plugins.{plugin_type}.params") or {}
-                if plugin_type == "llm" and engine_name == "openai_api":
-                    cloud_params = self.config_manager.get(f"plugins.{plugin_type}.cloud") or {}
-                    plugin_params = {**plugin_params, **cloud_params}
+                # 取参数的判据收敛在 core/plugin_params.py：语音服务那条路径
+                # 原先**不传 params**，于是 `plugins.asr.params` 全部静默失效
+                # （P5-B2 修的就是它）。两处各写一遍必然漂移，漂移的表现恰好是
+                # "某一条路径悄悄不工作"。
+                plugin_params = plugin_params_for(
+                    self.config_manager, plugin_type, engine_name
+                )
                 logger.info(f"   加载 {plugin_type} -> {engine_name}")
                 plugin = self.plugin_loader.load(engine_name, params=plugin_params)
                 if plugin:

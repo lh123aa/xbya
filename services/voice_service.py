@@ -12,6 +12,7 @@ from pathlib import Path
 from core.event_bus import get_event_bus, EventType
 from core.plugin_loader import get_plugin_loader
 from core.config_manager import get_config_manager
+from core.plugin_params import plugin_params as plugin_params_for
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +49,24 @@ class VoiceService:
         """
         try:
             # 加载ASR插件
+            #
+            # 参数**必须传**（P5-B2）：`PluginLoader.load(name, params=None)` 在
+            # params 为空时走 `plugin_class()`，插件退回自己 `__init__` 的默认值 ——
+            # 于是 `config.yaml` 里的 `plugins.asr.params.model_size` 与
+            # `initial_prompt` 在这条路径上**完全没被读到**，而且是静默的。
+            # 取参数的判据收敛在 core/plugin_params.py，与 core/app.py 同一条。
             asr_config = self.config_manager.get_plugin_config("asr")
             asr_engine = asr_config.get("engine", "faster_whisper")
-            
+            asr_params = plugin_params_for(self.config_manager, "asr", asr_engine)
+
             if asr_engine and asr_engine != "null":
-                self.asr = self.plugin_loader.load(asr_engine)
+                self.asr = self.plugin_loader.load(asr_engine, params=asr_params)
                 if self.asr:
-                    logger.info(f"ASR插件加载成功: {asr_engine}")
+                    logger.info(
+                        f"ASR插件加载成功: {asr_engine} "
+                        f"(model_size={asr_params.get('model_size', '默认')}, "
+                        f"偏置={len(asr_params.get('initial_prompt', ''))} 字)"
+                    )
                 else:
                     logger.warning(f"ASR插件加载失败: {asr_engine}")
                     self.asr = self.plugin_loader.load_by_interface("ASREngine")
@@ -64,7 +76,7 @@ class VoiceService:
             # 加载TTS插件
             tts_config = self.config_manager.get_plugin_config("tts")
             tts_engine = tts_config.get("engine", "edge_tts")
-            tts_params = tts_config.get("params", {})
+            tts_params = plugin_params_for(self.config_manager, "tts", tts_engine)
 
             if tts_engine and tts_engine != "null":
                 self.tts = self.plugin_loader.load(tts_engine, params=tts_params)

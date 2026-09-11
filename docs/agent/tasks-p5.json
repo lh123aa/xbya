@@ -87,13 +87,15 @@
       "id": "P5-B2",
       "priority": "P1",
       "title": "voice_service 加载 ASR 时透传 params（与 core/app.py 行为一致）",
-      "state": "pending",
+      "state": "fixed",
       "acceptance": [
         "两条加载路径行为一致",
         "用例断言 ASR 参数确实透传（model_size / initial_prompt 不再静默失效）"
       ],
-      "planned_evidence": [
-        "docs/agent/evidence/p5/voice_service_params.txt"
+      "evidence": [
+        "docs/agent/evidence/p5/voice_service_params.txt",
+        "core/plugin_params.py",
+        "tests/test_voice_service_params.py"
       ]
     },
     {

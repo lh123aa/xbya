@@ -1,6 +1,6 @@
 # P5 收口审计（P5-AUDIT-CLOSURE）
 
-生成时间：2026-09-11 10:05:07
+生成时间：2026-09-11 10:11:03
 
 > 本文件是**可复跑**的：`python docs/agent/evidence/p5/_tmp_closure_audit.py`
 > 它不产生结论，只逐条把事实列出来 —— 结论要么被这些行支持，要么不成立。
@@ -13,7 +13,7 @@
 | P5-A2 | ✅ 已修 | ✔ `docs/agent/evidence/p5/g1_py_compile.txt`<br>✔ `docs/agent/evidence/p5/g2_g3_tests_coverage.txt`<br>✔ `docs/agent/evidence/p5/d17_plan_param_validation.txt` | （无） |
 | P5-A3 | ✅ 已完成 | ✔ `AGENTS.md`<br>✔ `docs/agent/p5-closure-plan.md` | （无） |
 | P5-B1 | ✅ 已修 | ✔ `docs/agent/evidence/p5/d16_schema_shape.txt`<br>✔ `plugins/llm/tool_schemas.py`<br>✔ `tests/test_tool_schema_shape.py` | （无） |
-| P5-B2 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/voice_service_params.txt` |
+| P5-B2 | ✅ 已修 | ✔ `docs/agent/evidence/p5/voice_service_params.txt`<br>✔ `core/plugin_params.py`<br>✔ `tests/test_voice_service_params.py` | （无） |
 | P5-B3 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/st_vec0_e2e.txt` |
 | P5-B4 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/asr_long_sentence.txt` |
 | P5-B5 | ⏳ 未到终态 | （无） | `docs/agent/evidence/p5/serp_parser.txt` |
@@ -33,9 +33,9 @@
 | 终态 | 项数 |
 |------|------|
 | ⬜ 明确不做 | 6 |
-| ⏳ 未到终态 | 4 |
+| ✅ 已修 | 4 |
 | ✅ 已完成 | 3 |
-| ✅ 已修 | 3 |
+| ⏳ 未到终态 | 3 |
 | 🟡 待人工 | 2 |
 | **合计** | **18** |
 
@@ -62,10 +62,10 @@
 ========================================================================
 [PASS] 在真正的 git 工作区内  → rev-parse → 'true'
 [PASS] `.git` 是目录（不是 worktree 指针文件）
-[PASS] 至少有一次提交  → 25 个提交
+[PASS] 至少有一次提交  → 26 个提交
 [PASS] 没有遗留的 stash  → 空
-[FAIL] 工作区干净（排除验收证据目录）  → 7 项未提交：[' M AGENTS.md', ' M core/app.py', ' M docs/agent/tasks-p5.json']
-[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 238
+[FAIL] 工作区干净（排除验收证据目录）  → 6 项未提交：[' M AGENTS.md', ' M core/app.py', ' M docs/agent/tasks-p5.json']
+[PASS] 跟踪的 .py 文件数 ≥ 160  → 实际 243
 [PASS] 没有被禁文件进入版本库  → 全部合规
 [PASS] 跟踪内容无明文密钥（gsk_/sk-or-v1-，长度≥28 且不在豁免清单）  → 0 处
 [PASS] config.example.yaml 存在
@@ -81,7 +81,7 @@
 [跳过] tasks-p2.json 里没有带 evidence 的任务，无可查
 [跳过] tasks-p3.json 里没有带 evidence 的任务，无可查
 [PASS] tasks-p4.json 里声明的证据路径都存在  → 查了 13 条
-[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 14 条
+[PASS] tasks-p5.json 里声明的证据路径都存在  → 查了 17 条
 [跳过] tasks.json 里没有带 evidence 的任务，无可查
 ------------------------------------------------------------------------
 仓库卫生自检：19/20 通过，1 失败
@@ -94,6 +94,6 @@
 
 ```
 TOTAL                                                 7238      0   100%
-2694 passed, 1 skipped, 3 warnings in 70.55s (0:01:10)
+2705 passed, 1 skipped, 3 warnings in 70.64s (0:01:10)
 ```
 

@@ -1,0 +1,74 @@
+# P5-B2 证据：语音服务加载 ASR 时到底传没传 params
+
+生成时间：2026-09-11 10:07:42
+
+## 背景（为什么这条缺陷值得单独留证）
+
+`PluginLoader.load(name, params=None)` 在 `params` 为空时走 `plugin_class()` ——
+**一个配置都不带**。`services/voice_service.py` 原先正是这样：
+
+```python
+self.asr = self.plugin_loader.load(asr_engine)      # ← 没有 params=
+```
+
+于是 `config.yaml` 里的 `plugins.asr.params.model_size`（medium）与
+`initial_prompt`（P4-B5 加的解码偏置）在这条路径上**完全没被读到**，
+插件退回 `__init__` 默认值（`model_size="base"`、`initial_prompt=""`）。
+**而且完全没有告警** —— 日志里只写「ASR插件加载成功: faster_whisper」。
+
+这解释了 P4-C2 那条一直没讲通的旧记录：**「config 写 medium，回环实际用 small」**。
+
+## 甲、当前代码（已修）
+
+探针把 `PluginLoader.load` 换成只记录 kwargs 的假实现，再跑 `initialize()`。
+假实现不加载任何模型，所以是毫秒级；但它如实反映**真实调用点传了什么**。
+
+```
+initialize() -> True
+config 里 asr.params = {'compute_type': 'int8', 'device': 'cpu', 'initial_prompt': '算了 不用了 停止 取消 确定 确认', 'model_size': 'medium'}
+---- 实际传给 PluginLoader.load 的东西 ----
+  load('faster_whisper', params={'compute_type': 'int8', 'device': 'cpu', 'initial_prompt': '算了 不用了 停止 取消 确定 确认', 'model_size': 'medium'})
+  load('edge_tts', params={'pitch': 0, 'rate': -5, 'voice': 'zh-CN-XiaoxiaoNeural'})
+[判定] ✅ ASR 加载带了 params，键：['compute_type', 'device', 'initial_prompt', 'model_size']
+          model_size='medium'
+          initial_prompt='算了 不用了 停止 取消 确定 确认'
+```
+
+## 乙、反方向：把 `params=asr_params` 拿掉之后
+
+如果探针在「不传 params」时也报 ✅，那它就是空转的。
+
+```
+initialize() -> True
+config 里 asr.params = {'compute_type': 'int8', 'device': 'cpu', 'initial_prompt': '算了 不用了 停止 取消 确定 确认', 'model_size': 'medium'}
+---- 实际传给 PluginLoader.load 的东西 ----
+  load('faster_whisper', params=None)
+  load('edge_tts', params={'pitch': 0, 'rate': -5, 'voice': 'zh-CN-XiaoxiaoNeural'})
+[判定] ❌ ASR 加载**没有传 params** —— config 里的 model_size / initial_prompt 静默失效
+```
+
+- 结论：**✅ 探针确实照出了「没传 params」（不是空转）**
+
+## 丙、复原确认
+
+```
+[判定] ✅ ASR 加载带了 params，键：['compute_type', 'device', 'initial_prompt', 'model_size']
+```
+
+- ✅ 已复原并重新带参
+
+## 丁、单元测试（tests/test_voice_service_params.py，11 项）
+
+```
+...........                                                              [100%]pygame 2.6.1 (SDL 2.28.4, Python 3.12.8)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+
+============================== warnings summary ===============================
+C:\Python312\Lib\site-packages\pygame\pkgdata.py:25
+  C:\Python312\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+    from pkg_resources import resource_stream, resource_exists
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+11 passed, 1 warning in 0.86s
+[exit] 0
+```

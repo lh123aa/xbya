@@ -335,7 +335,8 @@ class RuleRouter(RouterService):
 | P5-AUDIT | G13 证据检查改为自动发现 `tasks*.json`（原写死四个文件名 ⇒ 新阶段悄悄不查） | ✅ 完成 | `evidence/p5/g13_hygiene.txt`（18 项 → 20 项） |
 | P5-AUDIT-CLOSURE | 收口审计：逐条列终态 + 证据是否存在 + 非终态措辞扫描 + 关卡原样复跑 | ✅ 完成 | `evidence/p5/closure_audit.txt`（**可复跑**） |
 | P5-B1 | D16 工具 schema 形制归一（收敛点 + 显式拒绝匿名工具） | ✅ 完成 | `evidence/p5/d16_schema_shape.txt`（26 项守卫 + **反方向验证**） |
-| P5-B2~B5 | voice_service 传参 / ST+vec0 / medium 长句 / SERP fixture | ⏳ **未到终态 —— 闭环缺口，尚未做完** | 计划路径见 `tasks-p5.json` 的 `planned_evidence` |
+| P5-B2 | voice_service 加载 ASR/TTS 时透传 params（取参数判据收敛到一处） | ✅ 完成 | `evidence/p5/voice_service_params.txt`（含**反方向验证**） |
+| P5-B3~B5 | ST+vec0 端到端 / medium 长句对比 / SERP 离线 fixture | ⏳ **未到终态 —— 闭环缺口，尚未做完** | 计划路径见 `tasks-p5.json` 的 `planned_evidence` |
 | P5-C1~C2 | 轮换 key / 人工验收 M1~M5 | 🟡 待人工 | 见 §六 末"能力边界" |
 | P5-C3~C8 | 6 项明确不做（D3 / 天气 IP / D7 / 繁简边界 / 诱饵页 / 历史账本） | ⬜ 已登记 | 各附可反驳理由 |
 
@@ -863,17 +864,17 @@ P3 期间新增全量运行样本（本轮共 **6 轮** `pytest tests/`，含 §
 | 验收关卡（内部） | G1~G7 + G13 = **7 关** | **7 / 7** | 每关都有原始输出 |
 | 验收关卡（外部依赖） | G8~G12 = **6 关** | **6 / 6 退出码 0** | ⚠️ G8 依赖免费配额，**有跳过项时按设计不算通过**，报告里单独标出 |
 | P5 登记项 | **18 项** | 见下表 | 闭环判据不是"做完"，而是"每项都有终态" |
-| 测试用例 | 全量 `pytest tests` | **2694 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败" |
+| 测试用例 | 全量 `pytest tests` | **2705 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败" |
 
 **P5 登记项逐条终态**（四种终态，没有第五种；机器可读的账本在 `tasks-p5.json`）：
 
 | 终态 | 项数 | 具体 |
 |------|------|------|
-| ✅ 已修 | 3 | P5-A2（D17 + 顺带 D18）、P5-AUDIT（G13 清单改自动发现）、P5-B1（D16 形制归一） |
+| ✅ 已修 | 4 | P5-A2（D17 + 顺带 D18）、P5-AUDIT（G13 清单改自动发现）、P5-B1（D16 形制归一）、P5-B2（voice_service 传参） |
 | ✅ 已完成 | 3 | P5-A1（账本刷新 + 完成度）、P5-A3（D14 终态登记）、P5-AUDIT-CLOSURE（收口审计） |
 | ⬜ 明确不做 | 6 | P5-C3 D3 / C4 天气 IP / C5 D7 / C6 繁简边界 / C7 诱饵页 / C8 历史账本 |
 | 🟡 待人工 | 2 | P5-C1 轮换 key、P5-C2 麦克风+GUI+人耳验收（各附最小操作路径与判据） |
-| ⏳ 未到终态（**闭环缺口**） | 4 | P5-B2 voice_service 传参 / B3 ST+vec0 / B4 medium 长句 / B5 SERP fixture |
+| ⏳ 未到终态（**闭环缺口**） | 3 | P5-B3 ST+vec0 / B4 medium 长句 / B5 SERP fixture |
 
 > **上表的数字是审计脚本数出来的，不是我数出来的**：`evidence/p5/closure_audit.txt`
 > 由 `_tmp_closure_audit.py` 生成，逐条列终态、逐条核对证据文件是否存在。
@@ -881,7 +882,7 @@ P3 期间新增全量运行样本（本轮共 **6 轮** `pytest tests/`，含 §
 > `pending`）—— 机器只读后者，这正是"文档说做完了"与"账本记着做完了"的区别。
 
 **为什么剩下的算不出百分比**：它们**是闭环缺口，不是"可选项"** —— 计划里它们是
-"有代码可改 / 从未实测"的已登记项。**闭环尚未宣告**，因为还有 4 项没做完。
+"有代码可改 / 从未实测"的已登记项。**闭环尚未宣告**，因为还有 3 项没做完。
 把它们写成"可选增强"等于**用措辞把欠的活儿抹掉**，已改回。
 （这条更正本身也是本轮审计的产物：审计脚本读 `tasks-p5.json` 的 `state` 字段，
 而措辞写在 `AGENTS.md` 里 —— **两个地方不一致时，机器只信前者**。）
