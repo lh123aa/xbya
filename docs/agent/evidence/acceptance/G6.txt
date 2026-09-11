@@ -6,16 +6,16 @@
 ------------------------------------------------------------------------
 ==========================================================================
 欣雅 Agent 层 · P1 系统性验收 — 指标量化
-时间: 2026-09-11 12:21:54
+时间: 2026-09-11 12:35:38
 Python: 3.12.8  平台: nt
 ==========================================================================
 
 [PASS] M1 规则路由准确率: 100.0% (73/73)  (目标 >90%)
         action 错 0 条，参数错 0 条
-[PASS] M2 规则路由延迟: P50 0.049ms / P95 0.066ms / P99 0.099ms (n=365)  (目标 P95 <10ms)
-[PASS] M3 感知延迟（首次反馈→确认语）: P50 2.6ms / max 3.4ms (n=4)  (目标 <1.5s)
+[PASS] M2 规则路由延迟: P50 0.072ms / P95 0.106ms / P99 0.117ms (n=365)  (目标 P95 <10ms)
+[PASS] M3 感知延迟（首次反馈→确认语）: P50 2.2ms / max 4.9ms (n=4)  (目标 <1.5s)
         ack 与 submit 并行发射，确认语走预热缓存
-[PASS] M4 总延迟（结果播报）: P50 3.6ms / max 11.1ms (n=4)  (目标 <3s)
+[PASS] M4 总延迟（结果播报）: P50 3.2ms / max 12.6ms (n=4)  (目标 <3s)
 [PASS] M5 误操作率（非法路径拒绝率）: 拒绝 8/8；白名单内放行=是  (目标 拦截率 100% / 白名单内不误拒)
         漏放: 无；异常类型异常: 无
 [PASS] M6 删除可恢复率: 永久删除调用=无；send2trash=有；实调用次数=1  (目标 100%（无永久删除分支）)
@@ -37,9 +37,9 @@ Python: 3.12.8  平台: nt
 汇总（M8 覆盖率 / M9 回归 由 pytest 提供，见 g0_coverage.txt / g3_regression.txt）
 ==========================================================================
   PASS  M1   规则路由准确率                    100.0% (73/73)
-  PASS  M2   规则路由延迟                     P50 0.049ms / P95 0.066ms / P99 0.099ms (n=365)
-  PASS  M3   感知延迟（首次反馈→确认语）             P50 2.6ms / max 3.4ms (n=4)
-  PASS  M4   总延迟（结果播报）                  P50 3.6ms / max 11.1ms (n=4)
+  PASS  M2   规则路由延迟                     P50 0.072ms / P95 0.106ms / P99 0.117ms (n=365)
+  PASS  M3   感知延迟（首次反馈→确认语）             P50 2.2ms / max 4.9ms (n=4)
+  PASS  M4   总延迟（结果播报）                  P50 3.2ms / max 12.6ms (n=4)
   PASS  M5   误操作率（非法路径拒绝率）              拒绝 8/8；白名单内放行=是
   PASS  M6   删除可恢复率                     永久删除调用=无；send2trash=有；实调用次数=1
   PASS  M7   工具执行成功率（真实执行子集）            100% (10/10)
@@ -51,7 +51,7 @@ Python: 3.12.8  平台: nt
 [tools] 未注册的工具: system_info
 [safety] 拒绝白名单外路径: C:\Windows\System32\drivers\etc\hosts
 [safety] 拒绝白名单外路径: C:\Program Files\secret.txt
-[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\xiaoyi_metrics_0bvus919\escaped.txt
+[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\xiaoyi_metrics_1da340p3\escaped.txt
 [safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\Windows\x.txt
 [safety] 拒绝 UNC 路径: \\server\share\file.txt
 [safety] 拒绝白名单外路径: C:\Windows
