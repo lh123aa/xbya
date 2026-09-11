@@ -6,7 +6,7 @@
 ------------------------------------------------------------------------
 ========================================================================
 F4 / F5 真实执行验证
-时间: 2026-09-11 07:29:45
+时间: 2026-09-11 07:35:54
 ========================================================================
 
 装配: tools=21 白名单=['Desktop', 'Documents', 'Downloads', 'Pictures']
@@ -19,8 +19,8 @@ F4 / F5 真实执行验证
 [PASS] web_open 已注册
 
 [F4-a] web_read 真实抓取
-  (277ms) success=True summary='「Example Domain」里面说：Example Domain  This domain is for use in documentation exam'
-[PASS] web_read 抓到 example.com  → 277ms
+  (266ms) success=True summary='「Example Domain」里面说：Example Domain  This domain is for use in documentation exam'
+[PASS] web_read 抓到 example.com  → 266ms
 [PASS] 抓到的正文是真内容（非空/非占位）  → 214 字符
 
 [F4-b] SSRF 与本地文件：必须全部拒绝
@@ -31,16 +31,16 @@ F4 / F5 真实执行验证
 [PASS] 拒绝 IPv6 回环  → '这个地址我不能访问哦'
 
 [F4-c] web_search 真实搜索
-  (493ms) success=True 结果数=5 summary='「Python 3.12 release notes」搜到 5 条：What’s New In Python、Python Release '
+  (590ms) success=True 结果数=5 summary='「Python 3.12 release notes」搜到 5 条：What’s New In Python、Python Release '
 [PASS] web_search 调用成功
-[PASS] web_search 返回真实结果  → 5 条 / 493ms
+[PASS] web_search 返回真实结果  → 5 条 / 590ms
   首条: 'What’s New In Python 3.12 — Python 3.14.7 documentation' → https://docs.python.org/3/whatsnew/3.12.html
 [PASS] 结果含真实 URL  → https://docs.python.org/3/whatsnew/3.12.html
 [PASS] 跳转链接已还原成真实地址  → https://docs.python.org/3/whatsnew/3.12.html
 [PASS] 标题与查询相关（不是导航栏/页脚推荐位）  → What’s New In Python 3.12 — Python 3.14.7 documentation
 
 [F4-c2] 中文查询不得返回与查询无关的诱饵结果
-  (476ms) 结果数=0 summary='「上海天气」没搜到结果呢'
+  (555ms) 结果数=0 summary='「上海天气」没搜到结果呢'
 [PASS] 返回的结果都与查询相关（或为空）  → 空 → 已退回诚实文案
 
 [F4-d] web_open 交接给系统浏览器
@@ -59,27 +59,27 @@ F4 / F5 真实执行验证
 [PASS] screenshot 已注册
 [PASS] open_app 已注册
 [PASS] clipboard 写入成功  → 0ms
-[PASS] 读回来的内容与写入一致（真·系统剪贴板往返）  → 'xiaoyi-f4f5-1789100991'
+[PASS] 读回来的内容与写入一致（真·系统剪贴板往返）  → 'xiaoyi-f4f5-1789101360'
 [PASS] 原剪贴板内容已恢复  → '欣雅剪贴板测试_9f3a'
 
 [F5-b] screenshot 真实 GDI 抓屏
-  (129ms) success=True summary='截图已经存好啦：f4f5_verify.png'
-[PASS] screenshot 抓屏成功  → 129ms
-[PASS] 产出的是真 PNG（magic 正确）  → 162437 bytes
-[PASS] PNG 体积说明是真图像而非空白  → 162437 bytes
+  (118ms) success=True summary='截图已经存好啦：f4f5_verify.png'
+[PASS] screenshot 抓屏成功  → 118ms
+[PASS] 产出的是真 PNG（magic 正确）  → 162882 bytes
+[PASS] PNG 体积说明是真图像而非空白  → 162882 bytes
   图像尺寸: 1920x1080
 [PASS] 分辨率合理  → 1920x1080
 [PASS] 验证后已删除截图（不把屏幕留在磁盘上）
 
 [F5-c] open_app 真实启动应用
-  (129ms) success=True summary='已经帮你打开文件「xiaoyi_f4f5_1789100991.txt」啦'
-[PASS] open_app 调用成功  → 129ms
-[PASS] 系统真的启动了默认程序（新进程出现）  → PID=[16832, 22660]
+  (140ms) success=True summary='已经帮你打开文件「xiaoyi_f4f5_1789101360.txt」啦'
+[PASS] open_app 调用成功  → 140ms
+[PASS] 系统真的启动了默认程序（新进程出现）  → PID=[8544, 23904]
 [PASS] 验证后已关闭该进程
 
 [F5-d] system_info 真实读取本机指标
-  (106ms) 'CPU 用了 86%，内存用了 67%，电量 0%（充电中），磁盘用了 92%'
-[PASS] system_info 读取成功  → 106ms
+  (102ms) 'CPU 用了 33%，内存用了 67%，电量 0%（充电中），磁盘用了 92%'
+[PASS] system_info 读取成功  → 102ms
 [PASS] 返回结构化指标  → keys=['battery_percent', 'battery_plugged', 'cpu_count', 'cpu_percent', 'disk_free_gb', 'disk_percent']
 
 ========================================================================
