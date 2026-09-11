@@ -116,27 +116,30 @@
       "id": "P5-B4",
       "priority": "P1",
       "title": "ASR medium/small 长句对比（补 C2 只测短句的缺口）",
-      "state": "pending",
+      "state": "measured",
       "acceptance": [
         "同一批长句在 small/medium 下对比并给出数字",
         "结论允许是「差异不明显」"
       ],
-      "planned_evidence": [
+      "evidence": [
         "docs/agent/evidence/p5/asr_long_sentence.txt"
-      ]
+      ],
+      "conclusion": "长句上 medium 明显更准（覆盖完整时 6/6 vs 4/6；同一句 6 段音频变体上 medium 5/6 段优于 small，+0.09~+0.455），代价是约 2.8 倍解码耗时。P4-C2 的「medium 不占优」是实验设计造成的假象：C2 只测短确认语，而偏置在短句上是主导因素（加偏置后两档都是 6/6），等于在比偏置而不是比档位。过程中另查出**与档位无关的产品缺陷**：vad_filter=True 会在部分长音频上静默截断（30 次调用命中 1 次，只覆盖音频的 39%），且只看相似度看不出它 —— 残缺文本与原文前缀天然相似。已登记为 D19（待人工决定默认值，因为实测关掉 VAD 会让 small 在低幅白噪上幻觉出「字幕by索兰娅」）。修正 model_size 属产品取舍，本轮不改配置。"
     },
     {
       "id": "P5-B5",
       "priority": "P1",
       "title": "C4 解析器离线 fixture：必应/百度/谷歌形态 SERP 各一份",
-      "state": "pending",
+      "state": "measured",
       "acceptance": [
         "fixture 取自真实抓到的 HTML（evidence/p4/_tmp_c4_raw_*.html），不是手写",
         "对必应能解析；对百度/谷歌形态给出如实结论"
       ],
-      "planned_evidence": [
-        "docs/agent/evidence/p5/serp_parser.txt"
-      ]
+      "evidence": [
+        "docs/agent/evidence/p5/serp_parser.txt",
+        "docs/agent/evidence/p5/serp_parser_raw_probes.txt"
+      ],
+      "conclusion": "已用 P4 真实抓取的 8 份 SERP 原文做成离线 fixture（tests/fixtures/serp/ + manifest.json，逐份记字节数与 MD5，复制后回读校验一致）。结论：必应可用（从 <li class=\"b_algo\"> 抽出 5 条真实标题+链接）；百度不可为（1488B 安全验证页，零结果结构，3/3 次逐字节相同）；谷歌不可为（92KB 脚本中继页，可见正文 53 字符，唯一命中是页脚「反馈」）。拦下必应**诱饵页**与谷歌页脚链接的都是相关性闸门而不是解析层。过程中还纠正了源码 docstring 里一句被我实测证伪的说法（「每一层都是为了绕开实测出来的坑」——实测第 1 层当下并不改变输出，挡住导航栏的是第 2 层），并把改正后的说法也用 4 条用例钉住。72 项新用例（tests/agent/test_serp_fixtures.py），全部离线、不发网络请求。"
     },
     {
       "id": "P5-C1",

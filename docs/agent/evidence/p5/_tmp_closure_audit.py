@@ -86,9 +86,17 @@ w("")
 
 w("## 三、非终态措辞扫描（正反两个方向都要防）")
 w("")
-docs = ["AGENTS.md", "docs/agent/p5-closure-plan.md", "docs/agent/f-closure.md",
-        "docs/agent/p4-history.md", "docs/agent/acceptance-history.md"]
-w("扫的文件：" + "、".join(f"`{d}`" for d in docs))
+# 扫描范围**自动发现**，不写死文件名 —— 写死过一次（P5-AUDIT 的 G13 同类问题）：
+# 原文是 5 个硬编码路径，本轮把 §15/§16 搬到 `p3-history.md` 之后，
+# 那份新文档就**悄悄不被扫**了。凡是"审计范围"这种清单，都要能自己长大。
+docs = [p.relative_to(ROOT).as_posix()
+        for p in sorted((ROOT / "docs" / "agent").glob("*.md"))
+        if p.is_file()]
+docs = ["AGENTS.md"] + docs
+w(f"扫的文件（**自动发现** `AGENTS.md` + `docs/agent/*.md`，共 {len(docs)} 份）：")
+w("")
+for d in docs:
+    w(f"- `{d}`")
 w("")
 for bad in BANNED:
     hits = []

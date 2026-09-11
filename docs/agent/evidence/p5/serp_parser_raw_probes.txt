@@ -1,0 +1,284 @@
+══════════════════════════════════════════════════════════════════════════════
+P5-B5 原始探针输出（未加工）
+══════════════════════════════════════════════════════════════════════════════
+
+生成时间：2026-09-11 10:21:23
+可复跑：`python docs/agent/evidence/p5/_tmp_b5_raw_probes.py`
+
+这三个脚本的输出是**证据本体**；`serp_parser.txt` 是对它的叙述。
+两者分开留档，是为了让「结论」与「原始数据」能互相校验 ——
+凡是统计类结论都要能逐条列出证据，而不是只报一个数。
+
+==============================================================================
+ 第 0 步：8 份原文清单 + 与 P4 记录对账
+ 脚本：docs/agent/evidence/p5/_tmp_b5_recon.py
+==============================================================================
+
+```
+==============================================================================
+P5-B5 前置：P4 原始 HTML 清单与来源核对
+==============================================================================
+
+共 8 份
+
+── _tmp_c4_raw_baidu_run1.html
+   bytes=1488  md5=403AF8943549C35B1B5915C502E4BC9A
+   <title>='百度安全验证'
+   页内查询词=''
+   可见正文长度=24  正文首行='网络不给力，请稍后重试'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 0 条
+
+── _tmp_c4_raw_baidu_run2.html
+   bytes=1488  md5=403AF8943549C35B1B5915C502E4BC9A
+   <title>='百度安全验证'
+   页内查询词=''
+   可见正文长度=24  正文首行='网络不给力，请稍后重试'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 0 条
+
+── _tmp_c4_raw_baidu_run3.html
+   bytes=1488  md5=403AF8943549C35B1B5915C502E4BC9A
+   <title>='百度安全验证'
+   页内查询词=''
+   可见正文长度=24  正文首行='网络不给力，请稍后重试'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 0 条
+
+── _tmp_c4_raw_bing_run1.html
+   bytes=120845  md5=A63A67928712E4FC1B68D776D240C05C
+   <title>='上海天气 - 搜索'
+   页内查询词='上海天气'
+   可见正文长度=1566  正文首行='辅助功能反馈'
+   容器 class="b_algo" 出现次数=10
+   extract_snippets → 5 条
+      · '東京司法書士協同組合'  https://www.tsknet.jp/
+      · '組合加入手続｜東京司法書士協同組合'  https://www.tsknet.jp/entry
+      · 'Microsoft Word - IDパスワード再交付申請書20190501~'  https://www.tsknet.jp/doc/login.pdf
+      · '組合員向けサービス｜東京司法書士協同組合'  https://www.tsknet.jp/service
+      · 'ログイン・新規ご入会 - TSK プレミアム・クラブ'  https://www.tsknet.jp/prm/login
+   与「上海天气」相关？False
+
+── _tmp_c4_raw_bing_run2.html
+   bytes=120222  md5=D4E9D693275E24CFB2CF775B79ECC26F
+   <title>='上海天气 - 搜索'
+   页内查询词='上海天气'
+   可见正文长度=2518  正文首行='辅助功能反馈'
+   容器 class="b_algo" 出现次数=10
+   extract_snippets → 5 条
+      · 'Flashscore.pl: MŚ U-20 Kobiet 2026, wyniki piłki n'  https://www.flashscore.pl/
+      · 'Livesport.com – Wyniki na żywo - piłka nożna, teni'  https://www.livesport.com/pl/
+      · 'Transmisje - online, na żywo, live, stream | TVP S'  https://sport.tvp.pl/transmisje
+      · "LiveScore | Today's Live Football Scores, Fixtures"  https://www.livescore.com/en/
+      · 'TVP SPORT - transmisje, wyniki, na żywo, wiadomośc'  https://sport.tvp.pl/
+   与「上海天气」相关？False
+
+── _tmp_c4_raw_google_run1.html
+   bytes=92317  md5=7C31B0C7DCCF1A726F94708383FB9DB3
+   <title>='Google Search'
+   页内查询词=''
+   可见正文长度=53  正文首行='如果您在几秒钟内没有被重定向，请点击此处。'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 1 条
+      · '反馈'  https://support.google.com/websearch
+   与「上海天气」相关？False
+
+── _tmp_c4_raw_google_run2.html
+   bytes=92594  md5=2207046F45AA11A8A130AA0168F9D4C2
+   <title>='Google Search'
+   页内查询词=''
+   可见正文长度=53  正文首行='如果您在几秒钟内没有被重定向，请点击此处。'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 1 条
+      · '反馈'  https://support.google.com/websearch
+   与「上海天气」相关？False
+
+── _tmp_c4_raw_google_run3.html
+   bytes=92413  md5=164885D643172B1AD1CD772BACB4BACA
+   <title>='Google Search'
+   页内查询词=''
+   可见正文长度=53  正文首行='如果您在几秒钟内没有被重定向，请点击此处。'
+   容器 class="b_algo" 出现次数=0
+   extract_snippets → 1 条
+      · '反馈'  https://support.google.com/websearch
+   与「上海天气」相关？False
+
+==============================================================================
+与 P4 记录对账（_tmp_c4_runs.json）
+==============================================================================
+
+注：runs.json 里**只有 baidu/google 各 3 次**，没有 bing 条目 ——
+    必应的原始 HTML 是补测留下的（见 _tmp_c4_bing_and_net.txt /
+    _tmp_c4_bing_decoy_cn.txt），但**页面自己身上带着查询词**
+    （<input name="q" value="上海天气"> + <title>上海天气 - 搜索</title>），
+    所以来源可核，不需要靠文件名。
+
+对账口径也必须一致：P4 探针把「解析出 0 条」记成 relevant=True
+（`_tmp_c4_probe_search.py:390` 写的是 `if parsed else True`）——
+意思是「没有结果可判，不算它不相关」。这一条我照抄，不自作主张改成 False，
+否则就是我这边口径和别人不同却报成「对账失败」。
+
+✔ _tmp_c4_raw_baidu_run1.html        bytes 1488==1488 parsed 0==0 relevant True==True
+✔ _tmp_c4_raw_baidu_run2.html        bytes 1488==1488 parsed 0==0 relevant True==True
+✔ _tmp_c4_raw_baidu_run3.html        bytes 1488==1488 parsed 0==0 relevant True==True
+✔ _tmp_c4_raw_google_run1.html       bytes 92317==92317 parsed 1==1 relevant False==False
+✔ _tmp_c4_raw_google_run2.html       bytes 92594==92594 parsed 1==1 relevant False==False
+✔ _tmp_c4_raw_google_run3.html       bytes 92413==92413 parsed 1==1 relevant False==False
+
+对账通过：6 份 baidu/google 原文的字节数、解析条数、相关性判定与 P4 记录逐条一致。
+bing 的 2 份虽无 runs.json 记录，但页面自带的查询词与标题都是「上海天气」，来源可核。
+```
+
+退出码：0
+
+==============================================================================
+ 第 1 步：三层 × 两模式，第 1 层到底改变了什么
+ 脚本：docs/agent/evidence/p5/_tmp_b5_layer_probe.py
+==============================================================================
+
+```
+==========================================================================
+bing_run1.html   bytes=118102  结果块=10
+==========================================================================
+  ① 结果块 × h2/h3: 5 条
+        · '東京司法書士協同組合'  https://www.tsknet.jp/
+        · '組合加入手続｜東京司法書士協同組合'  https://www.tsknet.jp/entry
+        · 'Microsoft Word - IDパスワード再交付申請書20190501'  https://www.tsknet.jp/doc/login.pdf
+        · '組合員向けサービス｜東京司法書士協同組合'  https://www.tsknet.jp/service
+        · 'ログイン・新規ご入会 - TSK プレミアム・クラブ'  https://www.tsknet.jp/prm/login
+  ① 结果块 × 任意链接: 5 条
+        · '東京司法書士協同組合'  https://www.tsknet.jp/
+        · '組合加入手続｜東京司法書士協同組合'  https://www.tsknet.jp/entry
+        · 'Microsoft Word - IDパスワード再交付申請書20190501'  https://www.tsknet.jp/doc/login.pdf
+        · '組合員向けサービス｜東京司法書士協同組合'  https://www.tsknet.jp/service
+        · 'ログイン・新規ご入会 - TSK プレミアム・クラブ'  https://www.tsknet.jp/prm/login
+  ② 全页 × h2/h3: 5 条
+        · '東京司法書士協同組合'  https://www.tsknet.jp/
+        · '組合加入手続｜東京司法書士協同組合'  https://www.tsknet.jp/entry
+        · 'Microsoft Word - IDパスワード再交付申請書20190501'  https://www.tsknet.jp/doc/login.pdf
+        · '組合員向けサービス｜東京司法書士協同組合'  https://www.tsknet.jp/service
+        · 'ログイン・新規ご入会 - TSK プレミアム・クラブ'  https://www.tsknet.jp/prm/login
+  ② 全页 × 任意链接: 5 条
+        · '图片'  https://www.bing.com/ck/a?!&&p=bf8ddc1ccb93a800b4d00
+        · '视频'  https://www.bing.com/ck/a?!&&p=6923c2ec43c5dd062377a
+        · '地图'  https://www.bing.com/ck/a?!&&p=70f0a82cb4b8057e2b336
+        · '资讯'  https://www.bing.com/ck/a?!&&p=11d03046d09b2f00b5f79
+        · '航班'  https://www.bing.com/ck/a?!&&p=ff27f1f3c864043d278f9
+  → 现状 extract_snippets(): ['https://www.tsknet.jp/', 'https://www.tsknet.jp/entry', 'https://www.tsknet.jp/doc/login.pdf', 'https://www.tsknet.jp/service', 'https://www.tsknet.jp/prm/login']
+  → 若**删掉第 1 层**（只剩全页 h2/h3 → 任意链接）：5 条
+        · '東京司法書士協同組合'  https://www.tsknet.jp/
+        · '組合加入手続｜東京司法書士協同組合'  https://www.tsknet.jp/entry
+        · 'Microsoft Word - IDパスワード再交付申請書20190501'  https://www.tsknet.jp/doc/login.pdf
+        · '組合員向けサービス｜東京司法書士協同組合'  https://www.tsknet.jp/service
+        · 'ログイン・新規ご入会 - TSK プレミアム・クラブ'  https://www.tsknet.jp/prm/login
+     与现状相同？True
+
+==========================================================================
+bing_run2.html   bytes=118624  结果块=10
+==========================================================================
+  ① 结果块 × h2/h3: 5 条
+        · 'Flashscore.pl: MŚ U-20 Kobiet 2026, wy'  https://www.flashscore.pl/
+        · 'Livesport.com – Wyniki na żywo - piłka'  https://www.livesport.com/pl/
+        · 'Transmisje - online, na żywo, live, st'  https://sport.tvp.pl/transmisje
+        · "LiveScore | Today's Live Football Scor"  https://www.livescore.com/en/
+        · 'TVP SPORT - transmisje, wyniki, na żyw'  https://sport.tvp.pl/
+  ① 结果块 × 任意链接: 5 条
+        · 'Flashscore.pl: MŚ U-20 Kobiet 2026, wy'  https://www.flashscore.pl/
+        · 'Livesport.com – Wyniki na żywo - piłka'  https://www.livesport.com/pl/
+        · 'Transmisje - online, na żywo, live, st'  https://sport.tvp.pl/transmisje
+        · "LiveScore | Today's Live Football Scor"  https://www.livescore.com/en/
+        · 'TVP SPORT - transmisje, wyniki, na żyw'  https://sport.tvp.pl/
+  ② 全页 × h2/h3: 5 条
+        · 'Flashscore.pl: MŚ U-20 Kobiet 2026, wy'  https://www.flashscore.pl/
+        · 'Livesport.com – Wyniki na żywo - piłka'  https://www.livesport.com/pl/
+        · 'Transmisje - online, na żywo, live, st'  https://sport.tvp.pl/transmisje
+        · "LiveScore | Today's Live Football Scor"  https://www.livescore.com/en/
+        · 'TVP SPORT - transmisje, wyniki, na żyw'  https://sport.tvp.pl/
+  ② 全页 × 任意链接: 5 条
+        · '图片'  https://www.bing.com/ck/a?!&&p=5a9bc0aa3ba83eb2e8e8f
+        · '视频'  https://www.bing.com/ck/a?!&&p=4b938d53e079092c41bf5
+        · '地图'  https://www.bing.com/ck/a?!&&p=511aad41c7406ec3c9f96
+        · '资讯'  https://www.bing.com/ck/a?!&&p=0c24edee8b8aa3593fe12
+        · '航班'  https://www.bing.com/ck/a?!&&p=8a1289717b96c5b90cee2
+  → 现状 extract_snippets(): ['https://www.flashscore.pl/', 'https://www.livesport.com/pl/', 'https://sport.tvp.pl/transmisje', 'https://www.livescore.com/en/', 'https://sport.tvp.pl/']
+  → 若**删掉第 1 层**（只剩全页 h2/h3 → 任意链接）：5 条
+        · 'Flashscore.pl: MŚ U-20 Kobiet 2026, wy'  https://www.flashscore.pl/
+        · 'Livesport.com – Wyniki na żywo - piłka'  https://www.livesport.com/pl/
+        · 'Transmisje - online, na żywo, live, st'  https://sport.tvp.pl/transmisje
+        · "LiveScore | Today's Live Football Scor"  https://www.livescore.com/en/
+        · 'TVP SPORT - transmisje, wyniki, na żyw'  https://sport.tvp.pl/
+     与现状相同？True
+
+==========================================================================
+google_run1.html   bytes=92231  结果块=0
+==========================================================================
+  ① 结果块: 空（没有结果块可拼）
+  ② 全页 × h2/h3: 0 条
+  ② 全页 × 任意链接: 1 条
+        · '反馈'  https://support.google.com/websearch
+  → 现状 extract_snippets(): ['https://support.google.com/websearch']
+  → 若**删掉第 1 层**（只剩全页 h2/h3 → 任意链接）：1 条
+        · '反馈'  https://support.google.com/websearch
+     与现状相同？True
+
+==========================================================================
+baidu_run1.html   bytes=1438  结果块=0
+==========================================================================
+  ① 结果块: 空（没有结果块可拼）
+  ② 全页 × h2/h3: 0 条
+  ② 全页 × 任意链接: 0 条
+  → 现状 extract_snippets(): []
+  → 若**删掉第 1 层**（只剩全页 h2/h3 → 任意链接）：0 条
+     与现状相同？True
+```
+
+退出码：0
+
+==============================================================================
+ 第 2 步：docstring 那句「只用 h2/h3 会命中页脚」能否复核
+ 脚本：docs/agent/evidence/p5/_tmp_b5_docstring_probe.py
+==============================================================================
+
+```
+==========================================================================
+bing_run1.html  chars=118102
+==========================================================================
+  第一个 class="b_algo" 出现在 char 59286（50.2% 处）
+  h2/h3: 全页共 10 处匹配
+      char   62169（52.6%）  '東京司法書士協同組合'
+      char   64052（54.2%）  '組合加入手続｜東京司法書士協同組合'
+      char   65653（55.6%）  'Microsoft Word - IDパスワード再交付申請書20190501~'
+      → 在第一个结果块**之前**的有 0 处（这些就是「h2/h3 先扫到页面其他部分」的那部分）
+  任意链接: 全页共 18 处匹配
+      char   39004（33.0%）  '图片'
+      char   39492（33.4%）  '视频'
+      char   39980（33.9%）  '地图'
+      → 在第一个结果块**之前**的有 5 处（这些就是「h2/h3 先扫到页面其他部分」的那部分）
+
+  前 3 条 h2/h3 命中所在的上下文片段：
+      …'_attribution" tabindex="-1"><cite>https://www.tsknet.jp</cite></div></div></div></a></div>'
+      …'ps://www.tsknet.jp <span class="b_ctdif">› entry</span></cite></div></div></div></a></div>'
+      …'ctdif">› doc › login.pdf</span></cite>&nbsp;&#0183;&#32;PDF 文件</div></div></div></a></div>'
+
+==========================================================================
+bing_run2.html  chars=118624
+==========================================================================
+  第一个 class="b_algo" 出现在 char 59755（50.4% 处）
+  h2/h3: 全页共 10 处匹配
+      char   62551（52.7%）  'Flashscore.pl: MŚ U-20 Kobiet 2026, wyni'
+      char   64423（54.3%）  'Livesport.com – Wyniki na żywo - piłka n'
+      char   66091（55.7%）  'Transmisje - online, na żywo, live, stre'
+      → 在第一个结果块**之前**的有 0 处（这些就是「h2/h3 先扫到页面其他部分」的那部分）
+  任意链接: 全页共 18 处匹配
+      char   39573（33.4%）  '图片'
+      char   40061（33.8%）  '视频'
+      char   40549（34.2%）  '地图'
+      → 在第一个结果块**之前**的有 5 处（这些就是「h2/h3 先扫到页面其他部分」的那部分）
+
+  前 3 条 h2/h3 命中所在的上下文片段：
+      …'ribution" tabindex="-1"><cite>https://www.flashscore.pl</cite></div></div></div></a></div>'
+      …'ion" tabindex="-1"><cite>https://www.livesport.com › pl</cite></div></div></div></a></div>'
+      …'" tabindex="-1"><cite>https://sport.tvp.pl › transmisje</cite></div></div></div></a></div>'
+```
+
+退出码：0

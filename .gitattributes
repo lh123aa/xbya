@@ -1,0 +1,21 @@
+# 让"必须是原始字节"的文件**保持原始字节**
+#
+# 起因（P5-B5）：`tests/fixtures/serp/*.html` 是 P4 真实抓取的 SERP 原文，
+# 判据是 **MD5** —— 字节变了，那份 fixture 就不再是"当时服务器发回来的东西"，
+# 而整个 B5 的意义就是"用真实字节而不是手写 HTML 验证解析器"。
+#
+# 但 Git 默认会把 `.html` 当文本，按 `core.autocrlf` 做 LF↔CRLF 转换：
+# 提交时把 CRLF 写成 LF、检出时再写回 CRLF（Windows 上），
+# 于是**同一份文件在不同平台上字节不同**，`manifest.json` 里记的字节数与 MD5
+# 会在别的机器上全部对不上，测试报出来的会是"fixture 被改过"。
+#
+# 处置：对这些路径显式关闭文本转换。
+# `-text` = 不把它当文本（不做任何行尾转换），这是保住字节的唯一办法。
+
+# SERP 抓取原文：判据是 MD5，必须逐字节保留
+tests/fixtures/serp/*.html -text
+tests/fixtures/serp/manifest.json -text
+
+# 音频测激：ASR 结论建立在"同一段音频喂两档"之上，字节变了就不是同一个测激
+docs/agent/evidence/p5/_tmp_b4_audio/**/*.wav -text
+docs/agent/evidence/p5/_tmp_b4_audio/**/*.mp3 -text

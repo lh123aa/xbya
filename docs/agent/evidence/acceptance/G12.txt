@@ -1,6 +1,6 @@
 # 关卡: G12 语音 5 场景回环（TTS→ASR→管线）
 # 命令: C:\Python312\python.exe tools/voice_scenarios_loopback.py --model small
-# 用时: 40.0s
+# 用时: 66.7s
 # 退出码: 0
 # 外部依赖: 是
 ------------------------------------------------------------------------
@@ -17,30 +17,30 @@ TTS 语音：zh-CN-XiaoxiaoNeural
           —— 回环测的是**产品**，TTS 只是「人嘴」的替身；替身抖动另用 --fresh-stimulus 单独测
 
 装配：tools=21 router=HybridRouter planner=HybridPlanner memory=HybridMemory enabled=True
-白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_bjj0xkvu\\Desktop']
+白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_b5rhwbys\\Desktop']
 [PASS] Agent 栈按真实配置装配并启用  → 21 个工具
 [PASS] 白名单 = 沙箱 Desktop
 
 [场景 1] 搜索文件（P0）
-  [TTS 0.00s / ASR 4.97s / 第1次] 合成='找一下桌面上的 PDF 文件'
+  [TTS 0.00s / ASR 7.53s / 第1次] 合成='找一下桌面上的 PDF 文件'
                        转写='找一下桌面上的 PDF 文件。'
                        音频 4.06s / 幅度 1507 / 130028B / 测激=fixed:场景1.wav
 [PASS] ASR 转写基本正确（找+桌面+PDF）  → 命中 3/3
-  ack: '稍等，我搜一下~' (event elapsed_ms=1.9)
-  result: ok=True tool=file_search elapsed_ms=3.5 summary='找到 2 个文件（旧合同.pdf、合同_2025.pdf）'
+  ack: '好的，我找找看~' (event elapsed_ms=1.9)
+  result: ok=True tool=file_search elapsed_ms=4.5 summary='找到 2 个文件（旧合同.pdf、合同_2025.pdf）'
 [PASS] 1.5s 内发出确认语事件  → elapsed_ms=1.9
 [PASS] 确认语延迟 < 1.5s（§7.3 指标）  → 1.9ms
-[PASS] 确认语有可播报文本  → '稍等，我搜一下~'
-[PASS] 3s 内产出结果事件  → elapsed_ms=3.5
-[PASS] 结果播报延迟 < 3s（§7.3 指标）  → 3.5ms
+[PASS] 确认语有可播报文本  → '好的，我找找看~'
+[PASS] 3s 内产出结果事件  → elapsed_ms=4.5
+[PASS] 结果播报延迟 < 3s（§7.3 指标）  → 4.5ms
 [PASS] 动作识别为 file_search  → file_search
 [PASS] 搜索成功  → True
   播报内容与桌面实际 PDF：结果=['旧合同.pdf', '合同_2025.pdf'] 磁盘=['合同_2025.pdf', '旧合同.pdf']
 [PASS] 结果与桌面实际文件一致  → ['旧合同.pdf', '合同_2025.pdf'] vs ['合同_2025.pdf', '旧合同.pdf']
 
 [场景 2] 删除确认流程（P0）
-  [前置] 先搜PDF → '找到 2 个文件（合同_2025.pdf、旧合同.pdf）'
-  [TTS 0.00s / ASR 3.81s / 第1次] 合成='删除桌面上的截图'
+  [前置] 先搜PDF → '找到 2 个文件（旧合同.pdf、合同_2025.pdf）'
+  [TTS 0.00s / ASR 7.62s / 第1次] 合成='删除桌面上的截图'
                        转写='删除桌面上的截圖。'
                        音频 3.11s / 幅度 1420 / 99564B / 测激=fixed:场景2-指令.wav
 [PASS] ASR 转写基本正确（删除+桌面+截图）  → 命中 3/3；繁→简转换 圖→图
@@ -51,7 +51,7 @@ TTS 语音：zh-CN-XiaoxiaoNeural
 [PASS] 确认前未执行删除
 [PASS] 确认前文件仍在原处
 [PASS] 确认目标是桌面上的截图（PNG）  → ['截图_01.png', '截图_02.png']
-  [TTS 0.00s / ASR 3.49s / 第1次] 合成='确定'
+  [TTS 0.00s / ASR 5.21s / 第1次] 合成='确定'
                        转写='確定'
                        音频 1.68s / 幅度 841 / 53868B / 测激=fixed:场景2-确认.wav
 [PASS] ASR 转写基本正确（确定）  → 命中 1/1；繁→简转换 確→确
@@ -65,11 +65,11 @@ TTS 语音：zh-CN-XiaoxiaoNeural
   审计：success=1 detail='成功 2，失败 0'
 
 [场景 3] 打断（P0）
-  [TTS 0.00s / ASR 3.77s / 第1次] 合成='找一下所有文件'
+  [TTS 0.00s / ASR 5.31s / 第1次] 合成='找一下所有文件'
                        转写='找一下所有文件。'
                        音频 2.61s / 幅度 1413 / 83436B / 测激=fixed:场景3.wav
 [PASS] ASR 转写基本正确（找+文件）  → 命中 2/2
-[PASS] 已播报确认语（打断的前提）  → '稍等，我搜一下~'
+[PASS] 已播报确认语（打断的前提）  → '让我翻翻看~'
 [PASS] 打断被管线记录（stats.interrupts +1）  → 0 → 1
 [PASS] 打断后不再播报结果（无 feedback.result）  → 0 条
 [PASS] 打断后无挂起计划  → 0
@@ -83,14 +83,14 @@ Hello from the pygame community. https://www.pygame.org/contribute.html
 [PASS] 真实打断入口（app.interrupt_speech / Ctrl+Alt+D）能被 Agent 管线感知  → interrupts +1
 
 [场景 4] 降级路径（P0 / R6）
-  [TTS 0.00s / ASR 3.47s / 第1次] 合成='给我讲个笑话'
+  [TTS 0.00s / ASR 5.27s / 第1次] 合成='给我讲个笑话'
                        转写='給我講個笑話'
                        音频 2.35s / 幅度 1214 / 75372B / 测激=fixed:场景4-闲聊.wav
 [PASS] ASR 转写基本正确（笑话）  → 命中 1/1；繁→简转换 給→给 講→讲 個→个 話→话
   pipeline.chat：text='給我講個笑話' conf=0.1
 [PASS] 非工具指令回退到 pipeline.chat（交回原 LLM 链路）
 [PASS] 未误判为工具指令（无 feedback.result）
-  [TTS 0.00s / ASR 3.53s / 第1次] 合成='你好呀'
+  [TTS 0.00s / ASR 4.99s / 第1次] 合成='你好呀'
                        转写='你好呀!'
                        音频 1.77s / 幅度 1009 / 56556B / 测激=fixed:场景4-问候.wav
 [PASS] ASR 转写基本正确（你好）  → 命中 1/1
@@ -106,30 +106,30 @@ Hello from the pygame community. https://www.pygame.org/contribute.html
 [PASS] 栈如实报告 enabled=False
 
 [场景 5] 安全边界（P0 / R1）
-  [TTS 0.00s / ASR 3.76s / 第1次] 合成='打开 C 盘 Windows 文件夹'
+  [TTS 0.00s / ASR 5.55s / 第1次] 合成='打开 C 盘 Windows 文件夹'
                        转写='打开C盘Windows文件夹。'
                        音频 3.67s / 幅度 1483 / 117484B / 测激=fixed:场景5.wav
 [PASS] ASR 转写基本正确（打开+Windows+文件夹）  → 命中 3/3
   路由结果：action=file_read params={'target': 'c盘windows'}
-  结果：ok=False summary='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_bjj0xkvu\\Desktop'
+  结果：ok=False summary='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_b5rhwbys\\Desktop'
   确认事件：0
 [PASS] 越界说法未被解成写/删类动作  → file_read
 [PASS] 越界指令有明确反馈（拒绝或求证）
 [PASS] 越界指令没有被成功执行（安全底线）  → success=False
 [PASS] 被白名单硬拒绝且理由可读  → 这个位置我不能动哦，只能操作：C:\Users\49046\AppData\Local\Temp\xiaoyi_voic
   [显式路径] action=file_read params={'target': 'c:\\windows\\system32\\cmd.exe'}
-  [显式路径] ok=False summary='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_bjj0xkvu\\Desktop'
+  [显式路径] ok=False summary='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_b5rhwbys\\Desktop'
 [PASS] 显式越界路径被拒绝  → False
 [PASS] 显式越界路径的拒绝理由可读  → 这个位置我不能动哦，只能操作：C:\Users\49046\AppData\Local\Temp\xiaoyi_voic
   审计库共 3 条：file_read(success=0), file_read(success=0), file_delete(success=1)
 [PASS] 审计日志记录了被拒的操作  → 2 条
-  审计（最新拒绝）：action=file_read detail='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_bjj0xkvu'
+  审计（最新拒绝）：action=file_read detail='这个位置我不能动哦，只能操作：C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_voice_b5rhwbys'
 [PASS] 语音那句的越界尝试也在审计里留痕
 
-ASR 模型加载耗时（一次性）：2.2s
+ASR 模型加载耗时（一次性）：3.5s
 
 [ASR 回环汇总]
-  真实回环 7 句（另有 0 句按 --no-tts 跳过）：TTS 合计 0.0s，ASR 合计 26.8s（均值 3.83s/句）
+  真实回环 7 句（另有 0 句按 --no-tts 跳过）：TTS 合计 0.0s，ASR 合计 41.5s（均值 5.93s/句）
 
 ==========================================================================
 语音回环验证结果：50/50 通过（失败 0，降级 0）

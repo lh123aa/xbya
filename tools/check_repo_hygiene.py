@@ -321,6 +321,27 @@ def main() -> int:
               f"查了 {checked} 条" if not missing_ev
               else f"缺 {len(missing_ev)} 条：{missing_ev}")
 
+    # ── 9. 必须逐字节保留的文件，在**版本控制层面**也要保得住 ──
+    #
+    # 为什么加这一条（P5-B5）：SERP fixture 的全部价值建立在"它就是当时服务器
+    # 发回来的字节"之上，判据是逐份记下的字节数 + MD5。而 Git 默认把 `.html`
+    # 当文本做 LF↔CRLF 转换 —— 一旦发生，测试报出来的会是"fixture 被改过"，
+    # 真实原因却是行尾处理。
+    #
+    # **这类缺陷在本机永远测不出来**（本机工作区就是 CRLF，`read_bytes()`
+    # 读到的正是提交后的形态），只有换机器/重新 clone 才炸。
+    # 所以不能靠"跑一遍测试是绿的"，必须显式问 Git 自己认不认这个规则。
+    rc_attr, attr_out = git("check-attr", "text", "--",
+                            "tests/fixtures/serp/bing_run1.html")
+    ga = ROOT / ".gitattributes"
+    check(ga.is_file() and "tests/fixtures/serp/*.html -text"
+          in ga.read_text(encoding="utf-8"),
+          "`.gitattributes` 对抓取原文关掉了文本转换",
+          "否则 MD5 判据跨机器失效")
+    check(attr_out.strip().endswith("text: unset"),
+          "Git 实际判定该路径不做文本转换",
+          attr_out.strip() or "（无输出）")
+
     ok = sum(1 for p, _ in results if p)
     bad = sum(1 for p, _ in results if not p)
     print("-" * 72)

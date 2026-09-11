@@ -1,0 +1,238 @@
+{
+  "purpose": "P5-B5：搜索引擎结果页解析器的**离线** fixture",
+  "why_real_capture": "解析器的三层提取顺序是照真实页面的坑长出来的（导航栏 / 页脚推荐位），手写 HTML 只能证明「我自己以为的结构能被解析」",
+  "provenance": "docs/agent/evidence/p4/_tmp_c4_raw_*.html（P4-C4 真实抓取，逐字节复制）",
+  "query": "上海天气",
+  "captured_at": "2026-09-11（P4-C4 评估期间，本机时钟）",
+  "engine_verdict": {
+    "bing": "可用 —— 真实结果块（<li class=\"b_algo\">）解析出标题+链接",
+    "baidu": "不可为（反爬）—— 1488 字节「百度安全验证」页，无结果结构",
+    "google": "不可为（反爬-需执行 JS）—— 92KB 脚本中继页，可见正文 53 字符"
+  },
+  "entries": [
+    {
+      "file": "baidu_run1.html",
+      "engine": "baidu",
+      "run": 1,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_baidu_run1.html",
+      "recorded_in_runs_json": true,
+      "bytes": 1488,
+      "md5": "403AF8943549C35B1B5915C502E4BC9A",
+      "title": "百度安全验证",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 24,
+      "parsed": 0,
+      "parsed_layer": "无（三层都没抽到）",
+      "titles": [],
+      "urls": [],
+      "relevant_to_query": true,
+      "verdict": "不可为（反爬）—— 1488 字节「百度安全验证」页，无结果结构",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    },
+    {
+      "file": "baidu_run2.html",
+      "engine": "baidu",
+      "run": 2,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_baidu_run2.html",
+      "recorded_in_runs_json": true,
+      "bytes": 1488,
+      "md5": "403AF8943549C35B1B5915C502E4BC9A",
+      "title": "百度安全验证",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 24,
+      "parsed": 0,
+      "parsed_layer": "无（三层都没抽到）",
+      "titles": [],
+      "urls": [],
+      "relevant_to_query": true,
+      "verdict": "不可为（反爬）—— 1488 字节「百度安全验证」页，无结果结构",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    },
+    {
+      "file": "baidu_run3.html",
+      "engine": "baidu",
+      "run": 3,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_baidu_run3.html",
+      "recorded_in_runs_json": true,
+      "bytes": 1488,
+      "md5": "403AF8943549C35B1B5915C502E4BC9A",
+      "title": "百度安全验证",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 24,
+      "parsed": 0,
+      "parsed_layer": "无（三层都没抽到）",
+      "titles": [],
+      "urls": [],
+      "relevant_to_query": true,
+      "verdict": "不可为（反爬）—— 1488 字节「百度安全验证」页，无结果结构",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    },
+    {
+      "file": "bing_run1.html",
+      "engine": "bing",
+      "run": 1,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_bing_run1.html",
+      "recorded_in_runs_json": false,
+      "bytes": 120845,
+      "md5": "A63A67928712E4FC1B68D776D240C05C",
+      "title": "上海天气 - 搜索",
+      "page_declared_query": "上海天气",
+      "result_blocks": 10,
+      "visible_text_chars": 1566,
+      "parsed": 5,
+      "parsed_layer": "结果块（<li class=\"b_algo\">）",
+      "titles": [
+        "東京司法書士協同組合",
+        "組合加入手続｜東京司法書士協同組合",
+        "Microsoft Word - IDパスワード再交付申請書20190501~",
+        "組合員向けサービス｜東京司法書士協同組合",
+        "ログイン・新規ご入会 - TSK プレミアム・クラブ"
+      ],
+      "urls": [
+        "https://www.tsknet.jp/",
+        "https://www.tsknet.jp/entry",
+        "https://www.tsknet.jp/doc/login.pdf",
+        "https://www.tsknet.jp/service",
+        "https://www.tsknet.jp/prm/login"
+      ],
+      "relevant_to_query": false,
+      "verdict": "可用 —— 真实结果块（<li class=\"b_algo\">）解析出标题+链接"
+    },
+    {
+      "file": "bing_run2.html",
+      "engine": "bing",
+      "run": 2,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_bing_run2.html",
+      "recorded_in_runs_json": false,
+      "bytes": 120222,
+      "md5": "D4E9D693275E24CFB2CF775B79ECC26F",
+      "title": "上海天气 - 搜索",
+      "page_declared_query": "上海天气",
+      "result_blocks": 10,
+      "visible_text_chars": 2518,
+      "parsed": 5,
+      "parsed_layer": "结果块（<li class=\"b_algo\">）",
+      "titles": [
+        "Flashscore.pl: MŚ U-20 Kobiet 2026, wyniki piłki nożnej, wyniki na żywo",
+        "Livesport.com – Wyniki na żywo - piłka nożna, tenis, koszykówka i 30 ...",
+        "Transmisje - online, na żywo, live, stream | TVP SPORT",
+        "LiveScore | Today's Live Football Scores, Fixtures & Results",
+        "TVP SPORT - transmisje, wyniki, na żywo, wiadomości sportowe"
+      ],
+      "urls": [
+        "https://www.flashscore.pl/",
+        "https://www.livesport.com/pl/",
+        "https://sport.tvp.pl/transmisje",
+        "https://www.livescore.com/en/",
+        "https://sport.tvp.pl/"
+      ],
+      "relevant_to_query": false,
+      "verdict": "可用 —— 真实结果块（<li class=\"b_algo\">）解析出标题+链接"
+    },
+    {
+      "file": "google_run1.html",
+      "engine": "google",
+      "run": 1,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_google_run1.html",
+      "recorded_in_runs_json": true,
+      "bytes": 92317,
+      "md5": "7C31B0C7DCCF1A726F94708383FB9DB3",
+      "title": "Google Search",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 53,
+      "parsed": 1,
+      "parsed_layer": "兜底（任意链接）",
+      "titles": [
+        "反馈"
+      ],
+      "urls": [
+        "https://support.google.com/websearch"
+      ],
+      "relevant_to_query": false,
+      "verdict": "不可为（反爬-需执行 JS）—— 92KB 脚本中继页，可见正文 53 字符",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    },
+    {
+      "file": "google_run2.html",
+      "engine": "google",
+      "run": 2,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_google_run2.html",
+      "recorded_in_runs_json": true,
+      "bytes": 92594,
+      "md5": "2207046F45AA11A8A130AA0168F9D4C2",
+      "title": "Google Search",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 53,
+      "parsed": 1,
+      "parsed_layer": "兜底（任意链接）",
+      "titles": [
+        "反馈"
+      ],
+      "urls": [
+        "https://support.google.com/websearch"
+      ],
+      "relevant_to_query": false,
+      "verdict": "不可为（反爬-需执行 JS）—— 92KB 脚本中继页，可见正文 53 字符",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    },
+    {
+      "file": "google_run3.html",
+      "engine": "google",
+      "run": 3,
+      "source": "docs/agent/evidence/p4/_tmp_c4_raw_google_run3.html",
+      "recorded_in_runs_json": true,
+      "bytes": 92413,
+      "md5": "164885D643172B1AD1CD772BACB4BACA",
+      "title": "Google Search",
+      "page_declared_query": "",
+      "result_blocks": 0,
+      "visible_text_chars": 53,
+      "parsed": 1,
+      "parsed_layer": "兜底（任意链接）",
+      "titles": [
+        "反馈"
+      ],
+      "urls": [
+        "https://support.google.com/websearch"
+      ],
+      "relevant_to_query": false,
+      "verdict": "不可为（反爬-需执行 JS）—— 92KB 脚本中继页，可见正文 53 字符",
+      "cross_check": {
+        "bytes_match": true,
+        "parsed_match": true,
+        "relevant_match": true,
+        "md5_recorded_in_p4": null
+      }
+    }
+  ]
+}
