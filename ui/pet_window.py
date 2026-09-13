@@ -2264,13 +2264,28 @@ class PetWindow(QWidget):
         self.set_state("idle")
 
     def _should_ignore(self, text: str) -> bool:
-        """判断短文本是否应静默（无效响应）"""
+        """判断短文本是否应静默（无效响应）。
+
+        ⚠️ **命中时必须留下 INFO 日志**。原先这里静默返回 True，
+        调用方只弹个气泡就 return —— 于是"识别成功但毫无反应"在日志里
+        完全看不出来（端到端分析实测：9 条识别结果里 8 条这么消失的，
+        漏斗通过率只有 11%）。判据要能自证，不能靠猜。
+        """
         if not text or not text.strip():
+            logger.info("[漏斗] 丢弃：识别结果为空")
             return True
         min_len = 3
         if self.app and getattr(self.app, "config_manager", None):
             min_len = int(self.app.config_manager.get("voice.reply_min_length", 3))
-        return len(text.strip()) < min_len
+        stripped = text.strip()
+        if len(stripped) < min_len:
+            logger.info(
+                "[漏斗] 丢弃：识别文本过短 %r（%d 字 < reply_min_length=%d）"
+                "—— 若你想让短词也回应，把 config 的 voice.reply_min_length 调小",
+                stripped, len(stripped), min_len,
+            )
+            return True
+        return False
 
     # 明显的"非人话"特征：视频字幕 / 系统弹幕 / 纯平台音。保守过滤（不会误杀真实对话）。
     _NOISE_MARKERS = ("字幕", "点赞", "订阅", "转发", "打赏", "弹幕", "bilibili",
@@ -2281,13 +2296,22 @@ class PetWindow(QWidget):
 
         保守策略：只在出现明显非对话标记时判为噪音；其余一律视为真实对话，
         避免误杀用户的正常发言。
+
+        ⚠️ **判为噪音时必须打 INFO 日志**（原先只有 debug，默认级别下
+        完全不可见）。这条出口与 `_should_ignore` 一样属于"静默丢弃"，
+        而静默丢弃正是"她听到了却不理我"最难排查的成因。
         """
         if not text or not text.strip():
+            logger.info("[漏斗] 丢弃：文本为空（非真实说话）")
             return False
         t = text.strip().lower()
         # 明显环境音/字幕标记 → 非人话
         for m in self._NOISE_MARKERS:
             if m in t:
+                logger.info(
+                    "[漏斗] 丢弃：命中环境音/字幕标记 %r —— 原文 %r",
+                    m, text.strip()[:40],
+                )
                 return False
         # 纯无意义重复（如单个词被识别为乱码/无价值）暂不额外过滤，保守放行
         return True

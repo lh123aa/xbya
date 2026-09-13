@@ -1044,6 +1044,29 @@ class MicrophoneService:
                             if time.time() - self._last_vol_log_at >= 5.0:
                                 self._last_vol_log_at = time.time()
                                 logger.info(f"[音量] vol={vol:.1f} (触发阈值={trigger_threshold:.0f}, 底噪={noise_floor:.0f})")
+                                # ── 环境自诊断：底噪高到"人声不可能超过阈值"时必须说出来 ──
+                                #
+                                # 本机实测过这个陷阱：房间里持续放视频时底噪能到 15000+，
+                                # 阈值随之涨到 27000，而真人声（数百）**永远够不到**。
+                                # 此时所有组件日志都"正常"：麦克风在跑、有触发、ASR 有输出、
+                                # TTS 有合成 —— 只有用户知道"她听不见我"。
+                                # 端到端分析花了很久才定位到这个"不是缺陷的缺陷"，
+                                # 所以这里让它**自己说出来**，而不是等人去量。
+                                #
+                                # 判据：底噪超过基础阈值（speech_volume）的 20 倍，
+                                # 说明环境音量已经远高于"正常说话"的量级。
+                                if noise_floor > max(speech_volume, 100) * 20:
+                                    now = time.time()
+                                    if now - getattr(self, "_noisy_warn_at", 0.0) >= 60.0:
+                                        self._noisy_warn_at = now
+                                        logger.warning(
+                                            "[mic] ⚠ 环境噪声过高（底噪 %.0f，触发阈值 %.0f）："
+                                            "当前房间音量已远超人声量级，真人说话**可能无法触发**。"
+                                            "请关掉外放/降低音量，或改用耳机 —— "
+                                            "这是环境问题，不是麦克风故障。"
+                                            "（想确认请跑：python tools/list_mic_devices.py --probe）",
+                                            noise_floor, trigger_threshold,
+                                        )
                             if vol > trigger_threshold:
                                 # 触发冷却：刚处理完一段语音后，短时间内忽略新触发，
                                 # 避免环境音/扬声器余音立即再次触发转写（烧 CPU）
