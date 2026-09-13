@@ -1530,7 +1530,19 @@ class PetWindow(QWidget):
           会按到没绑定的组合，于是场景测不出来。文档写死一个可配置的值就是这个下场。
         - 正在处理 / 冷却中：加入待处理队列（最多2条），当前对话结束后按序处理
         - 空闲：立即处理
+        - **麦克风已关闭：直接丢弃**（用户明确关了麦，绝不能再听/再回应）
         """
+        # ★ 闸门（根因修复）：用户关掉麦克风后，任何路径捕获到的音频都不许
+        #   进入处理链路。原先这里**没有这个判断** —— 只要监听流因为任何原因
+        #   （竞态、重启、别的代码路径重新 open）还活着，捕获到的话就会被
+        #   正常处理并回应，用户感知正是"我关了麦克风，她怎么还能听见我说话"。
+        #   判据用 `_monitor_enabled`（用户的意图），而不是底层流状态 ——
+        #   流可能因为竞态短暂存活，但"用户说过要关"必须永远优先。
+        if not self._monitor_enabled:
+            logger.info("[语音] 麦克风已关闭，丢弃捕获的语音: %s", wav_path)
+            self._delete_wav(wav_path)
+            return
+
         # 自动打断：仅当配置开启（voice.auto_interrupt=true）时启用声纹验证打断
         if self._speaking:
             auto_interrupt = False
@@ -2435,7 +2447,18 @@ class PetWindow(QWidget):
         self.show_bubble("已置顶 📌" if on else "已取消置顶", 1500)
 
     def _toggle_mic(self, on: bool):
-        """麦克风开关（复用 hotkey 回调的逻辑）"""
+        """麦克风开关（菜单勾选 / 热键共用同一条路径）。
+
+        ⚠️ **必须把状态写回 `config.voice.listening`**（根因修复）：
+        原实现只改内存里的 `_monitor_enabled`，不落盘。于是出现用户报告的
+        「麦克风关了为啥还能听到声音」：
+          1. 菜单关麦 → `_monitor_enabled=False`，但 config 里 `listening` 仍是 true；
+          2. 之后任何一次"保存设置"（`apply_settings` 会按 `voice.listening`
+             无条件重启监听）→ **麦克风被重新打开**，而菜单仍显示已关闭；
+          3. 重启应用同理：配置里是 true，一启动就开始听。
+        用户的意图（我要关掉麦克风）必须持久化，否则开关只是"这一次有效"。
+        """
+        on = bool(on)
         if on:
             ok = self.start_voice_monitor()
             if ok:
@@ -2451,6 +2474,27 @@ class PetWindow(QWidget):
             self.stop_voice_monitor()
             self._monitor_enabled = False
             self.show_bubble("麦克风已关闭 🔇", 1500)
+        # ★ 无论开还是关，都把意图写回配置 —— 否则"关麦"扛不过
+        #   apply_settings() 与下一次启动（见 docstring 的复现步骤）。
+        self._persist_listening(on)
+
+    def _persist_listening(self, on: bool) -> None:
+        """把监听开关意图写回 `config.voice.listening`。
+
+        写失败只告警、不抛：不能因为配置落盘失败就把开关本身也弄坏
+        （用户至少这一次的操作要生效）。
+        """
+        try:
+            cm = self.app.config_manager if (
+                self.app and getattr(self.app, "config_manager", None)) else None
+            if cm is None:
+                return
+            if bool(cm.get("voice.listening", True)) == bool(on):
+                return                      # 值没变，不写（顺带避免无谓落盘）
+            cm.set("voice.listening", bool(on))
+            logger.info("[mic] 已写回 config.voice.listening=%s", bool(on))
+        except Exception as e:
+            logger.warning("[mic] 写回 voice.listening 失败（本次操作仍生效）: %s", e)
 
     def _toggle_autostart(self, on: bool):
         """开机自启开关"""
@@ -2620,7 +2664,14 @@ class PetWindow(QWidget):
             if not cm:
                 logger.warning("无配置管理器，跳过热更新")
                 return
-            # 1. 监听开关：运行中→按新配置重启监听（start内部读取参数）
+            # 1. 监听开关：按**配置**重启监听（start 内部读取参数）
+            #
+            # ⚠️ 这里曾经是"关麦后又被偷偷打开"的现场：本行按
+            #    `voice.listening` 无条件重启监听，而菜单关麦**只改内存、
+            #    不落盘** ⇒ 用户关掉麦克风后再"保存设置"，麦克风就被重开了，
+            #    菜单还显示已关闭。根因已在 `_toggle_mic` 修掉（关麦会写回
+            #    `voice.listening=false`），所以现在读到的就是用户的真实意图。
+            #    改这里之前请先确认那件事仍然成立。
             listening = bool(cm.get("voice.listening", True))
             self.stop_voice_monitor()
             self._monitor_enabled = False
@@ -2738,22 +2789,8 @@ class PetWindow(QWidget):
         return False
 
     def toggle_voice_monitor(self):
-        """热键回调：切换监听"""
-        if self._is_monitor_active():
-            self.stop_voice_monitor()
-            self._monitor_enabled = False
-            self.show_bubble("麦克风已关闭 🔇", 1500)
-        else:
-            ok = self.start_voice_monitor()
-            if ok:
-                self.show_bubble("麦克风已开启 🎤", 1500)
-            else:
-                try:
-                    from services.microphone_service import get_microphone_service
-                    mic_ok = get_microphone_service().is_available()
-                except Exception:
-                    mic_ok = False
-                self.show_bubble("麦克风不可用 😢" if not mic_ok else "常驻监听未启动，请检查设置", 2000)
+        """热键回调：切换监听（与菜单共用 `_toggle_mic`，含配置落盘）"""
+        self._toggle_mic(not self._is_monitor_active())
 
     @staticmethod
     def _apply_autostart(enabled: bool):
