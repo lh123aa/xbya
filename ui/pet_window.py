@@ -81,6 +81,7 @@ class PetWindow(QWidget):
         self._drag_mouse_start = QPoint()
         self._drag_win_start = QPoint()
         self._is_snapped_state = False  # 只有 _edge_snap() 真正执行贴边时才置 True
+        self._pre_snap_pos = None       # 贴边前的可见位置（存档要用它，不用屏幕外坐标）
 
         # 常驻监听状态
         self._monitor_mic = None
@@ -185,6 +186,35 @@ class PetWindow(QWidget):
     def _qsettings(self) -> QSettings:
         return QSettings("xbyaPet", "xbyaPet")
 
+    # 恢复时要求窗口至少有这么多像素落在可见区内（避免"只剩一条边"的位置）
+    POS_MIN_VISIBLE = 60
+
+    def _is_position_usable(self, x: int, y: int) -> bool:
+        """判断 (x, y) 是否是一个"用户能看见并抓住"的合法位置。
+
+        判据必须是**对称**的：旧实现只挡住右边/下边（`x >= right()-10`），
+        却漏了左边/上边 —— 于是贴左边保存的 `x=-220` 会被判合法，
+        下次启动窗口整个跑到屏幕外，用户找不到桌宠。
+
+        同时要求窗口**至少有一块**落在某块屏幕的可用区内
+        （按所有屏幕判断，而不是只按当前那块 —— 多屏时位置可能来自另一块屏）。
+        """
+        from PySide6.QtGui import QGuiApplication
+        w, h = self.width(), self.height()
+        screens = QGuiApplication.screens() or []
+        if not screens:
+            screens = [QGuiApplication.primaryScreen()]
+        for sc in screens:
+            if sc is None:
+                continue
+            g = sc.availableGeometry()
+            # 与可用区求交，交集宽高都够大才算"看得见"
+            ix = min(x + w, g.right() + 1) - max(x, g.left())
+            iy = min(y + h, g.bottom() + 1) - max(y, g.top())
+            if ix >= self.POS_MIN_VISIBLE and iy >= self.POS_MIN_VISIBLE:
+                return True
+        return False
+
     def _restore_position(self) -> None:
         """启动时恢复上次关闭的位置；若不存在或位置非法则用默认(居中偏下)。"""
         try:
@@ -194,16 +224,8 @@ class PetWindow(QWidget):
                 self._set_default_position()
                 return
             x, y = int(s.value("pos/x", -1)), int(s.value("pos/y", -1))
-            if x < 0 or y < 0:
-                logger.info(f"[位置] 存档非法 x={x} y={y}，使用默认位置")
-                self._set_default_position()
-                return
-            # 若保存的位置已不在任何屏幕可见区（分辨率变化/多屏拔除），回退默认
-            geo = self._get_screen_geometry()
-            w, h = self.width(), self.height()
-            if (x >= geo.right() - 10 or x + w <= geo.left() or
-                    y >= geo.bottom() - 10 or y + h <= geo.top()):
-                logger.info(f"[位置] 存档位置({x},{y})超出屏幕范围，使用默认位置")
+            if not self._is_position_usable(x, y):
+                logger.info(f"[位置] 存档位置({x},{y})不可用（不在任何屏幕可见区内），使用默认位置")
                 self._set_default_position()
                 return
             logger.info(f"[位置] 恢复到 ({x}, {y})")
@@ -223,10 +245,35 @@ class PetWindow(QWidget):
             pass
 
     def _save_position(self) -> None:
-        """保存当前窗口位置到 QSettings。"""
+        """保存当前窗口位置到 QSettings。
+
+        两道闸，都是实测踩出来的：
+        1. **恢复完成前不写**。窗口在 `__init__` 里是 `(0,0)`、尺寸也是临时的
+           300x350，任何在这个窗口期触发的保存都会把"左上角"写进存档
+           —— 用户下次启动就看到桌宠跑到屏幕左上角。
+        2. **贴边隐藏态不写窗口当前坐标**。`_edge_snap()` 会把窗口移到屏幕外
+           （右边只剩 8px 手柄）。那个坐标不是用户想要的位置，
+           存进去下次恢复必被判非法 → 落回默认位置（屏幕上方）。
+           此时改写**吸附前**记下的可见位置（`_pre_snap_pos`）。
+        """
+        if not getattr(self, "_position_restored", False):
+            logger.debug("[位置] 恢复未完成，跳过保存（避免写入初始 (0,0)）")
+            return
         try:
             s = self._qsettings()
             x, y = int(self.x()), int(self.y())
+            # 贴边隐藏态：用吸附前的可见位置替代屏幕外坐标
+            if getattr(self, "_is_snapped_state", False):
+                pre = getattr(self, "_pre_snap_pos", None)
+                if pre is not None and self._is_position_usable(pre[0], pre[1]):
+                    x, y = int(pre[0]), int(pre[1])
+                    logger.debug(f"[位置] 贴边态改用吸附前位置 ({x}, {y})")
+                else:
+                    logger.debug("[位置] 处于贴边隐藏态且无可用吸附前位置，跳过保存")
+                    return
+            if not self._is_position_usable(x, y):
+                logger.debug(f"[位置] 当前位置({x},{y})不可见，跳过保存")
+                return
             s.setValue("pos/x", x)
             s.setValue("pos/y", y)
             s.sync()
@@ -602,7 +649,14 @@ class PetWindow(QWidget):
         """加载宠物"""
         self.anim_controller.load_pet(pet_name)
         if self.render_mode == "vrm":
-            return  # VRM 模式窗口尺寸由 3D 视图控制，不按精灵尺寸调整
+            # VRM 模式窗口尺寸由 3D 视图控制，不按精灵尺寸调整 —— 但**位置仍要恢复**。
+            # 旧实现在这里直接 return，位置恢复整段被跳过，VRM 模式下窗口
+            # 永远停在 __init__ 的 (0,0)，用户看到的就是"桌宠跑到屏幕左上角"。
+            if not self._position_restored:
+                self._position_restored = True
+                self._restore_position()
+                logger.info(f"[位置] (vrm) restore后位置=({self.x()},{self.y()})")
+            return
         size = self.anim_controller.get_size()
         self.setFixedSize(size[0] + 100, size[1] + 100)  # 留边距给阴影和气泡
         logger.info(f"[位置] load_pet后尺寸={self.width()}x{self.height()}, 当前位置=({self.x()},{self.y()})")
@@ -1100,6 +1154,10 @@ class PetWindow(QWidget):
         w, h = self.width(), self.height()
         snapped = False
 
+        # 记下吸附前的可见位置。吸附后窗口会被移到屏幕外，
+        # 而这里是用户**真正想放**的地方 —— 存档要存这个。
+        self._pre_snap_pos = (x, y)
+
         # 左边缘
         if x <= geo.left() + self.SNAP_DIST:
             self.move(geo.left() - w + self.HANDLE_SIZE, y)
@@ -1111,7 +1169,9 @@ class PetWindow(QWidget):
 
         if snapped:
             self._is_snapped_state = True
-            logger.debug(f"边缘吸附 → ({self.x()}, {self.y()})")
+            logger.debug(f"边缘吸附 → ({self.x()}, {self.y()})  吸附前=({x}, {y})")
+        else:
+            self._pre_snap_pos = None
 
     def _is_edge_snapped(self) -> bool:
         """检查是否处于贴边隐藏状态（只看标志，不靠位置判断）"""
@@ -1152,7 +1212,10 @@ class PetWindow(QWidget):
             was_dragging = self.dragging
             self.dragging = False
             self._edge_snap()
-            # 拖拽松手后记住新位置（sprite 模式拖拽由本窗口处理）
+            # 拖拽松手后记住新位置（sprite 模式拖拽由本窗口处理）。
+            # 注意：_edge_snap() 可能刚把窗口移到屏幕外，此时 _save_position()
+            # 会因为 _is_snapped_state=True 而主动跳过 —— 这是对的，
+            # 用户要的位置是"拖到哪儿"，不是贴边后藏到屏幕外的坐标。
             try:
                 self._save_position()
             except Exception:
@@ -1198,6 +1261,11 @@ class PetWindow(QWidget):
             x = geo.right() - w - 4
         self.move(x, y)
         self._is_snapped_state = False
+        # 弹回后窗口回到可见区，此时才是用户真实位置的最终值
+        try:
+            self._save_position()
+        except Exception:
+            pass
         logger.debug(f"取消贴边 → ({x}, {y})")
 
     # ========== 鼠标事件 ==========
