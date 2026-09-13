@@ -166,15 +166,39 @@ class MicrophoneService:
         取不到电平（无 numpy/pyaudio 异常）时退回原"取第一个"行为。
         """
         if self.input_device is not None:
-            return self.input_device
+            # ⚠️ `exclude` 是**硬约束**，优先于"显式配置"。
+            #
+            # 原实现这里直接 `return self.input_device`，**完全无视 exclude**，
+            # 于是死流恢复（`_pick_mic_index(exclude=dev_idx)`）会把刚判定为
+            # 死流的设备**原样挑回来** —— 重开、又死、再挑回来，形成
+            # **每秒重开一次的无限循环**（实测日志里连续 16 次）。
+            # 每次重开都在开关音频流、重置 noise_floor，最终把底噪搅到
+            # 4000+，真人声（数百）再也过不了阈值 —— 用户感知就是"她听不见"。
+            #
+            # 语义上讲：显式配置表达的是"**首选**"，不是"哪怕它已经坏了
+            # 也只能用它"。死流恢复的前提本来就是"当前设备已确认不可用"。
+            if exclude is not None and self.input_device == exclude:
+                logger.warning(
+                    "[mic] 显式配置的设备 idx=%s 已被判定不可用，"
+                    "本次临时改用其它设备（配置保持不变）",
+                    self.input_device,
+                )
+            else:
+                return self.input_device
         if getattr(self, "input_device_name", ""):
             idx = self.find_device_by_name(self.input_device_name)
-            if idx is not None:
+            if idx is not None and idx != exclude:
                 return idx
-            logger.warning(
-                "[mic] 配置的设备名 %r 未匹配到任何输入设备，回退自动挑选",
-                self.input_device_name,
-            )
+            if idx is not None:
+                logger.warning(
+                    "[mic] 名字 %r 匹配到的 idx=%s 已被排除，改用其它设备",
+                    self.input_device_name, idx,
+                )
+            else:
+                logger.warning(
+                    "[mic] 配置的设备名 %r 未匹配到任何输入设备，回退自动挑选",
+                    self.input_device_name,
+                )
 
         # ── 自动挑选：优先实测电平 ──
         picked = self._pick_by_level(exclude=exclude)
@@ -927,8 +951,27 @@ class MicrophoneService:
                             self._silent_chunks += 1
                         else:
                             self._silent_chunks = 0
+                            # 有声音说明流是活的 → 清零退避计数，
+                            # 否则正常运行时的偶发静默会把计数堆到触发退避。
+                            if getattr(self, "_dead_recover_count", 0):
+                                self._dead_recover_count = 0
                         if self._silent_chunks >= 90:
                             self._silent_chunks = 0
+                            # 恢复退避：连续多次判定"死流"说明问题不在设备选择，
+                            # 而在更底层（被独占/驱动异常/音频服务重启中）。
+                            # 无退避地每秒重开一次会**反复开关音频流**，
+                            # 把设备搅得更不稳定，并让 noise_floor 反复重置 ——
+                            # 实测就是这么把底噪推到 4000+、害得真人声过不了阈值的。
+                            self._dead_recover_count = getattr(
+                                self, "_dead_recover_count", 0) + 1
+                            if self._dead_recover_count >= 3:
+                                backoff = min(
+                                    30.0, 1.0 * (2 ** (self._dead_recover_count - 3)))
+                                logger.warning(
+                                    "[mic] 死流已连续恢复 %d 次，退避 %.0f 秒后再试"
+                                    "（频繁重开音频流会让设备更不稳定）",
+                                    self._dead_recover_count, backoff)
+                                time.sleep(backoff)
                             logger.warning(
                                 "[mic] 连续 %.0f 秒电平恒为 0 → 判定音频流已死，重开设备",
                                 (self.chunk_size / max(rate, 1)) * 90)
@@ -943,7 +986,14 @@ class MicrophoneService:
                             try:
                                 new_idx = self._pick_mic_index(exclude=dev_idx)
                             except Exception:
+                                new_idx = None
+                            # 实在挑不出别的设备时，退回同 idx 重开一次
+                            # （可能是驱动瞬时失效，重开能救；但上方的退避
+                            #  保证不会再变成每秒一次的无限循环）。
+                            if new_idx is None:
                                 new_idx = dev_idx
+                                logger.warning(
+                                    "[mic] 没有其它可用设备，仍重开 idx=%s", dev_idx)
                             try:
                                 stream = p.open(
                                     format=pyaudio.paInt16,
