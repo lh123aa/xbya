@@ -1841,6 +1841,54 @@ class PetWindow(QWidget):
         except OSError:
             pass
 
+    #: MP3 比特率（kbps）—— 用于**估算**音频时长。
+    #: Edge TTS 固定输出 24kHz 单声道 MP3，实测约 48kbps。
+    _TTS_MP3_KBPS = 48.0
+
+    def _audio_duration_ms(self, audio, text: str = "") -> float:
+        """返回音频的**真实时长**（毫秒），失败时回退到按字数估算。
+
+        字幕与语音不同步的根因就是"按字数猜时长"：
+        实测 5 句里 4 句对不上，最长差 **+1.1s**（"啊？"估 2500ms、
+        实际只有 1440ms），字幕在语音播完后还挂着。
+
+        优先用真实解析（`mutagen`/`wave`），拿不到再退回估算 ——
+        退回时**行为不比原来差**，只是不再假装精确。
+
+        Args:
+            audio: 音频字节（MP3）
+            text: 对应文本，仅用于回退估算
+
+        Returns:
+            毫秒数。拿不到任何依据时返回按字数估算的值。
+        """
+        if not audio:
+            return max(2500.0, len(text) / 4.0 * 1000 + 500)
+        # ── 优先：让播放器自己报时长（最准）──
+        try:
+            import io
+            import wave
+            with wave.open(io.BytesIO(audio), 'rb') as w:
+                return w.getnframes() / max(w.getframerate(), 1) * 1000.0
+        except Exception:
+            pass
+        # ── 次选：MP3 头部解析（mutagen 若可用）──
+        try:
+            import io
+            from mutagen.mp3 import MP3
+            return float(MP3(fileobj=io.BytesIO(audio)).info.length) * 1000.0
+        except Exception:
+            pass
+        # ── 兜底：按已知比特率估算。CBR MP3 的字节数与时长成正比，
+        #    比"按字数"准得多（不受语速/标点影响）──
+        try:
+            kbps = float(self._TTS_MP3_KBPS)
+            if kbps > 0:
+                return len(audio) * 8.0 / (kbps * 1000.0) * 1000.0
+        except Exception:
+            pass
+        return max(2500.0, len(text) / 4.0 * 1000 + 500)
+
     def _speak_sentences(self, sentences: list):
         """按句播报：句子并行合成、顺序播放（边合成边说）
 
@@ -1933,11 +1981,19 @@ class PetWindow(QWidget):
                     # 为什么不是"一直累积全文"：窗口只有 228px 宽、字幕区 44px
                     # 高（最多 2 行），累积会立刻溢出、后两行永远看不到。
                     # 折中：保留最近两句，既有上下文衔接，又不溢出。
+                    #
+                    # ⚠️ 停留时长必须用**音频真实时长**，不能按字数估算。
+                    #    原先写的是 `max(2500, len(text)/4.0*1000 + 500)`，
+                    #    即"每字 250ms + 500ms 余量"。实测 5 句里有 4 句对不上，
+                    #    最长差 **+1.1s**（"啊？"估 2500ms 实际只有 1440ms）——
+                    #    字幕在语音播完后还挂着，用户看到的就是"字幕和语音不同步"。
+                    #    字数与时长不是线性关系：语速、标点停顿、音色都会影响。
+                    show_dur = self._audio_duration_ms(audio, text)
                     if text:
                         _prev = getattr(self, "_subtitle_prev_sentence", "")
                         shown = f"{_prev}{text}" if _prev else text
-                        show_dur = max(2500, int(len(text) / 4.0 * 1000) + 500)
-                        self.show_bubble(shown, show_dur)
+                        # 字幕停留 = 音频时长 + 少量余量，播完稍作停留再清
+                        self.show_bubble(shown, int(show_dur) + 300)
                         # 记为"上一句"，供下一句拼接（仅当前句本身，不含再上一句）
                         self._subtitle_prev_sentence = text
 

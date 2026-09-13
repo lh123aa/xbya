@@ -74,8 +74,29 @@ class HybridRouter(RouterService):
         # 规则没把握，但需要 LLM 才能救
         if not self._can_use_llm():
             self._fallback_hits += 1
-            logger.debug("[hybrid] 规则低置信 %.2f，LLM 不可用 → 保持规则结果",
-                         rule_cmd.confidence)
+            # ⚠️ **低置信的"动作类"意图不能直接执行**（根因修复）。
+            #
+            # 原实现这里无条件 `return rule_cmd` —— 于是 LLM 不可用时，
+            # 一个 0.33 置信度的猜测会被**当成指令执行**：
+            #     今天有什么好吃的 -> file_list(dirs=[...])  conf=0.33
+            # 用户明明在闲聊，却收到"哎呀，刚才那个「Desktop」我没太听明白呢"。
+            #
+            # 判据：`chat` 是**安全兜底**（不产生副作用），
+            # 而文件/系统类动作**有副作用**。没把握时宁可当闲聊，
+            # 也不能拿用户的文件去赌一个猜测。
+            # 反过来，若规则判出来的本来就是 chat，保持原样即可。
+            if rule_cmd.action != "chat":
+                logger.info(
+                    "[hybrid] 规则低置信 %.2f 且 LLM 不可用 → 放弃动作 %s，转闲聊"
+                    "（低置信的动作类意图不执行，避免误操作）",
+                    rule_cmd.confidence, rule_cmd.action,
+                )
+                rule_cmd.action = "chat"
+                rule_cmd.params = {}
+                rule_cmd.source = "hybrid.low_conf_chat"
+            else:
+                logger.debug("[hybrid] 规则低置信 %.2f，LLM 不可用 → 保持闲聊",
+                             rule_cmd.confidence)
             return rule_cmd
 
         llm_cmd = self._route_llm(text, context)

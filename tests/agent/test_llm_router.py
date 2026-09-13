@@ -316,8 +316,27 @@ class TestHybridFallback:
         assert h.route("x", {}).action == "chat"
 
     def test_no_llm_provider(self):
-        """完全没接 LLM → 只用规则"""
+        """完全没接 LLM + 规则低置信 → **转闲聊，不执行动作**（D46 修正）。
+
+        ⚠️ 这条原先断言的是 `file_search`（即"保持规则结果"）。
+        那正是缺陷本身：规则给出 **0.1** 置信度的 `file_search`，
+        在 LLM 不可用时被**当成指令执行**。真实后果是纯闲聊被派成文件操作，
+        用户收到"哎呀，刚才那个「Desktop」我没太听明白呢"（实测日志）。
+
+        判据：`chat` 是安全兜底（无副作用），文件/系统类动作**有副作用**。
+        没把握时宁可当闲聊，也不能拿用户的文件赌一个猜测。
+        """
         rule = StubRouter(AgentCommand(action="file_search", confidence=0.1))
+        h = HybridRouter(rule=rule, llm=None, threshold=0.5)
+        cmd = h.route("x", {})
+        assert cmd.action == "chat", (
+            f"0.1 置信度的 file_search 被执行了（{cmd.action}）—— "
+            f"低置信的动作类意图必须转闲聊"
+        )
+
+    def test_no_llm_provider_keeps_high_conf_action(self):
+        """反方向：高置信动作在无 LLM 时照常执行。"""
+        rule = StubRouter(AgentCommand(action="file_search", confidence=0.9))
         h = HybridRouter(rule=rule, llm=None, threshold=0.5)
         assert h.route("x", {}).action == "file_search"
 

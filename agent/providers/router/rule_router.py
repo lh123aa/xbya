@@ -846,8 +846,26 @@ class RuleRouter(RouterService):
         raw: str,
         context: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """提取 `file_list` 的目录参数。
+
+        ⚠️ **原来这里是 `return {"dirs": dirs or ["Desktop"]}`** ——
+        没说目录就默认 `Desktop`。这造成两个后果：
+
+        1. **闲聊被当成文件操作**：`_compute_confidence` 看到 `dirs` 已填，
+           就按"参数完整"加分，于是
+           `今天有什么好吃的` -> `file_list(dirs=['Desktop'])` conf=0.93。
+           用户从没让它操作任何目录，却收到
+           "哎呀，刚才那个「Desktop」我没太听明白呢"。
+        2. **用户意图被静默替换**：他若说"列出文件"，本意是"就现在这个上下文"，
+           却被替换成"列出桌面" —— 这是**猜**，不是**听**。
+
+        正确做法：**没说就不填**。让上层按"缺目标"降置信度、回落闲聊；
+        真需要默认目录时，由工具层在**用户确实表达了文件意图**之后兜底
+        （那时默认才有依据）。判据：**默认值只能补"已确认的意图"，
+        不能制造意图**。
+        """
         dirs = self._extract_dirs(norm)
-        return {"dirs": dirs or ["Desktop"]}
+        return {"dirs": dirs} if dirs else {}
 
     # ── file_read ──
 
@@ -1248,7 +1266,24 @@ class RuleRouter(RouterService):
         params: Dict[str, Any],
         norm: str,
     ) -> float:
-        """置信度 = 基础分 + 关键词加成 + 参数完整度 + 句式加成"""
+        """置信度 = 基础分 + 关键词加成 + 参数完整度 + 句式加成
+
+        ⚠️ **文件类动作缺少"目标"时必须显著降分**（根因修复）。
+
+        缺陷实测：`file_list` 的关键词表里有 `"有什么"(2.2)`、`"看一下"(1.2)`
+        这类**日常口语高频词**，于是纯闲聊被高置信度判成文件操作：
+
+            今天有什么好吃的        -> file_list  conf=0.93
+            你觉得我这个人有什么缺点  -> file_list  conf=0.93
+            看一下我新买的鼠标       -> file_list  conf=0.85
+
+        用户明明在聊天，却收到"哎呀，刚才那个「Desktop」我没太听明白呢"
+        —— 他从没让它操作任何目录。根因是：**关键词命中就给了 0.93，
+        但 `dirs` 根本没提取出来**（没有任何目录被提及），
+        也就是说这个"文件操作"**没有目标**，不可能是真的文件操作。
+
+        所以对"必须有目标"的动作，缺目标就是**强反证**，而不只是少加一点分。
+        """
         conf = intent.base_confidence
 
         # 关键词得分（单关键词命中约 +0.16，上限 +0.25）
@@ -1264,4 +1299,35 @@ class RuleRouter(RouterService):
         if any(v in norm for v in ("帮我", "给我", "麻烦", "请", "把", "将")):
             conf += 0.05
 
+        # ── 强反证：文件/系统类动作必须说得出"操作什么" ──
+        #    什么都没说清 = 大概率是在闲聊（"今天有什么好吃的"）。
+        #    降到一个明显低于规则阈值的水平，让它自然回落到 chat。
+        #
+        #    ⚠️ 注意"目标"对不同动作是不同的字段：
+        #      file_list / file_search 看 `dirs`（列/搜哪儿）
+        #      file_read / file_rename  看 `target` 或 `dirs`（读/改哪个）
+        #      file_move / file_delete  看 `targets`（动哪些）
+        #    第一版只查 `dirs`，于是 `打开桌面上的报告.txt` 明明有 `target`
+        #    也被判成"没有目标"，置信度掉到 0.35 —— 那是**误降**。
+        if intent.action in self._NEEDS_TARGET_ACTIONS:
+            fields = self._NEEDS_TARGET_ACTIONS[intent.action]
+            if not any(params.get(f) for f in fields):
+                conf = min(conf - 0.45, 0.35)
+
         return round(min(conf, 0.99), 3)
+
+    #: 这些动作**必须**说得出"操作什么"，否则不可能是真的指令。
+    #:
+    #: 值是该动作里"能代表目标"的字段集合 —— **任一**填了就算有目标。
+    #: 为什么写死而不是自动推导：`DECLARED_PARAMS` 只说明"参数长什么样"，
+    #: 不说明"缺了它是否还成立"，更不说明哪几个字段是**等价的目标表达**。
+    #: 例如 `file_read` 可以给 `target`（"报告.txt"）也可以给 `dirs`（"桌面"），
+    #: 两者任一都成立。这种语义判断写在这里比让程序猜更可靠，也便于评审。
+    _NEEDS_TARGET_ACTIONS = {
+        'file_list': ('dirs',),
+        'file_search': ('dirs', 'pattern'),
+        'file_read': ('target', 'dirs'),
+        'file_rename': ('target', 'dirs'),
+        'file_move': ('targets', 'source', 'dest'),
+        'file_delete': ('targets', 'dirs', 'pattern'),
+    }
