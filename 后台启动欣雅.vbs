@@ -1,13 +1,49 @@
-' æ¬£é›… æ¡Œé¢æ™ºèƒ½ç®¡å®¶ - åŽå°æ— çª—å£å¯åŠ¨
-' é™é»˜è°ƒç”¨ pythonw.exe è¿è¡Œ run.pyï¼Œä¸å¼¹å‡ºç»ˆç«¯çª—å£ã€‚
-' åŒå‡»æœ¬æ–‡ä»¶å³åœ¨åŽå°å¯åŠ¨ã€‚
+' ============================================================
+'  ÐÀÑÅ ×ÀÃæÖÇÄÜ¹Ü¼Ò - ºóÌ¨ÎÞ´°¿ÚÆô¶¯
+' ============================================================
+'  Ë«»÷±¾ÎÄ¼þ¼´ÔÚºóÌ¨Æô¶¯ÐÀÑÅ£¬²»µ¯³öºÚÉ«ÖÕ¶Ë´°¿Ú¡£
+'
+'  ¡¾ÎªÊ²Ã´²»ÓÃÐ´ËÀÂ·¾¶¡¿±¾ÎÄ¼þÔøÒò´ËÍêÈ«Ê§Ð§£º
+'     ÉÏÒ»°æ°ÑÏîÄ¿Ä¿Â¼Ð´ËÀ³É "E:\³ÌÐò\×ÀÃæ³èÎï\xiaoyi-vrm-worktree"£¬
+'     ¶øÊµ¼ÊÄ¿Â¼ÊÇ "xbya-vrm-worktree"£¨"Ð¡Òä"¸ÄÃû"ÐÀÑÅ"Ê±Â©¸Ä£©¡£
+'     Â·¾¶²»´æÔÚÊ± WScript ¾²Ä¬Ê§°Ü ¡ª¡ª Ë«»÷ºÁÎÞ·´Ó¦¡¢Ò²Ã»ÓÐÈÎºÎ±¨´í£¬
+'     ÓÃ»§Ö»ÄÜÒÔÎª"³ÌÐò»µÁË"¡£
+'     ÏÖÔÚ¸Ä³É´Ó±¾ÎÄ¼þ×ÔÉíÎ»ÖÃÍÆµ¼ÏîÄ¿Ä¿Â¼£¬¸ú×ÅÎÄ¼þ¼Ð×ß£¬
+'     ÒÆ¶¯ / ¸ÄÃû / »»»úÆ÷¶¼²»ÓÃ¸ÄÕâÀï¡£
+'
+'  ¡¾±àÂë¡¿±¾ÎÄ¼þ´æÎª GBK(ANSI)¡£cscript Ä¬ÈÏ°´ ANSI ¶Á .vbs£¬
+'     ´æ UTF-8 »áÈÃÏÂÃæµÄÖÐÎÄÌáÊ¾±ä³ÉÂÒÂë¡£
+' ============================================================
 
+Option Explicit
+
+Dim fso, shell, baseDir, runPy, pythonw, cmd
+
+Set fso   = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
-baseDir = "E:\ç¨‹åº\æ¡Œé¢å® ç‰©\xiaoyi-vrm-worktree"
-pythonw = "C:\Python312\pythonw.exe"
-runPy = baseDir & "\run.py"
+' ±¾ÎÄ¼þËùÔÚÄ¿Â¼ = ÏîÄ¿¸ùÄ¿Â¼£¨±¾ÎÄ¼þ¾Í·ÅÔÚÏîÄ¿¸ùÏÂ£©
+baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
+runPy   = fso.BuildPath(baseDir, "run.py")
 
+' ---- Æô¶¯Ç°¼ì²é£ºÈ±¶«Î÷¾ÍÃ÷È·±¨´í£¬±ð¾²Ä¬Ê§°Ü ----
+If Not fso.FileExists(runPy) Then
+    MsgBox "ÕÒ²»µ½Æô¶¯½Å±¾£º" & vbCrLf & runPy & vbCrLf & vbCrLf & _
+           "ÇëÈ·ÈÏ±¾ÎÄ¼þÓë run.py ÔÚÍ¬Ò»¸öÎÄ¼þ¼ÐÄÚ¡£", _
+           vbCritical, "ÐÀÑÅ - Æô¶¯Ê§°Ü"
+    WScript.Quit 1
+End If
+
+' pythonw.exe£ºÎÞ¿ØÖÆÌ¨´°¿ÚµÄ Python¡£
+' ÓÅÏÈÓÃÓë±¾»ú python Í¬Ä¿Â¼µÄÄÇ¸ö£»ÕÒ²»µ½¾Í½»¸ø PATH ½âÎö¡£
+pythonw = "C:\Python312\pythonw.exe"
+If Not fso.FileExists(pythonw) Then
+    pythonw = "pythonw.exe"
+End If
+
+' ¹¤×÷Ä¿Â¼±ØÐëÊÇ baseDir£¬·ñÔò config.yaml / resources ÕÒ²»µ½
 shell.CurrentDirectory = baseDir
-' 0 = éšè—çª—å£ï¼›False = å¼‚æ­¥ä¸ç­‰å¾…
-shell.Run """" & pythonw & """ """ & runPy & """", 0, False
+
+' 0 = Òþ²Ø´°¿Ú£»False = ²»µÈ´ý£¨Òì²½£©
+cmd = """" & pythonw & """ """ & runPy & """"
+shell.Run cmd, 0, False

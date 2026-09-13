@@ -19,3 +19,14 @@ tests/fixtures/serp/manifest.json -text
 # 音频测激：ASR 结论建立在"同一段音频喂两档"之上，字节变了就不是同一个测激
 docs/agent/evidence/p5/_tmp_b4_audio/**/*.wav -text
 docs/agent/evidence/p5/_tmp_b4_audio/**/*.mp3 -text
+
+# Windows 启动器：必须是 GBK + CRLF 的原始字节
+#
+# ① 编码必须是 GBK：`cmd.exe` 在 `chcp` 生效**之前**就按系统 ANSI 读整个 .bat，
+#    存成 UTF-8 会让中文被误读成命令 —— 实测把 `if not exist` 读坏后直接报
+#    "不是内部或外部命令"，**整个启动器失效**。`.vbs` 同理（cscript 按 ANSI 读）。
+# ② 行尾必须是 CRLF：`.bat` 用 LF 会出现诡异的行拼接问题。
+#
+# 两者都要求"提交什么字节、检出就什么字节"，所以显式关掉文本转换与行尾规范化。
+启动欣雅.bat -text
+后台启动欣雅.vbs -text
