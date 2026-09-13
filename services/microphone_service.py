@@ -67,6 +67,27 @@ class MicrophoneService:
         #: 否则会和用户的明确选择打架。
         self._pin_device = False
 
+        # ── 输入增益补偿（voice.mic_gain）──
+        #
+        # 为什么需要它：本机实测麦克风的输入电平只有正常值的 **1/25**
+        # （说话时 RMS≈130、峰值 544 = 满量程 1.66%；而 ASR 能正确识别的
+        #  回环测激是 RMS≈2867、满量程 69%）。连扬声器外放这么响的声音
+        # 录进来也只有 2%，说明是**输入增益**问题，不是"麦克风离得远"。
+        #
+        # 后果是整个管线瘫掉：
+        #     听不到 -> 不触发 -> 不录音 -> 没 ASR -> 没回复
+        # 漏斗实测 82 秒里 **① 触发 = 0**，一次都没启动过。
+        #
+        # ASR 插件虽然自带 30x 增益，但它只在**录音完成之后**生效 ——
+        # 那时已经太晚了：触发判断用的是补偿前的电平，链路根本走不到录音。
+        # 所以补偿必须发生在**触发判断之前**。
+        #
+        # 上限 50x：不能再高，否则纯底噪也会被放大到触发线以上，
+        # 结果是环境音不断触发（比听不到更糟：会答非所问）。
+        self.input_gain = 1.0
+        self.MAX_INPUT_GAIN = 50.0
+        self._load_gain_from_config()
+
         # 回调
         self.on_speech_detected: Optional[Callable[[str], None]] = None
         self.on_recording_start: Optional[Callable[[], None]] = None
@@ -108,7 +129,77 @@ class MicrophoneService:
         else:
             logger.warning("[mic] 配置的 voice.mic_device=%r 无效，回退自动挑选", raw)
 
-    
+    def _load_gain_from_config(self) -> None:
+        """读取 `voice.mic_gain`（输入增益倍数）。
+
+        取值语义：
+          - 不填 / null → 1.0（与原行为完全一致）
+          - 数字        → 直接用作倍数
+          - "auto"      → 启动时实测本底，自动推算一个能让说话触发的倍数
+
+        `auto` 的算法：底噪已知（启动时实测），说话电平通常是底噪的 3~5 倍，
+        但**本机的绝对电平**可能整体偏低。目标是让"说话"能越过
+        阈值 `底噪×1.7+60`，所以按底噪量级反推需要的放大倍数。
+        """
+        try:
+            from core.config_manager import get_config_manager
+            raw = get_config_manager().get("voice.mic_gain", None)
+        except Exception as e:
+            logger.debug("[mic] 读取 voice.mic_gain 失败（用 1.0）: %s", e)
+            return
+        if raw is None or raw == "":
+            return
+        if isinstance(raw, str) and raw.strip().lower() == "auto":
+            self._gain_auto = True
+            logger.info("[mic] 输入增益=auto（启动时按实测电平自动推算）")
+            return
+        try:
+            g = float(raw)
+        except (TypeError, ValueError):
+            logger.warning("[mic] voice.mic_gain=%r 不是数字，忽略（用 1.0）", raw)
+            return
+        self.input_gain = max(1.0, min(g, self.MAX_INPUT_GAIN))
+        if self.input_gain != g:
+            logger.warning(
+                "[mic] voice.mic_gain=%s 超出范围 [1, %.0f]，已收敛为 %.1f",
+                g, self.MAX_INPUT_GAIN, self.input_gain)
+
+    def effective_input_gain(self) -> float:
+        """返回**实际生效**的输入增益（已收敛到 [1, MAX_INPUT_GAIN]）。
+
+        单独开一个方法而不是直接读属性：调用方（触发判断）必须拿到收敛后的值，
+        否则误配一个巨大数字会把底噪也放大到触发线以上 ——
+        后果比"听不到"更糟（环境音不断触发、答非所问）。
+        """
+        try:
+            g = float(getattr(self, "input_gain", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            g = 1.0
+        return max(1.0, min(g, getattr(self, "MAX_INPUT_GAIN", 50.0)))
+
+    def calibrate_gain(self, noise_floor: float) -> float:
+        """按实测底噪推算一个"能让说话越过触发线"的增益。
+
+        Args:
+            noise_floor: 实测底噪（RMS，与触发判断同一口径）
+
+        Returns:
+            建议增益（已收敛）。1.0 表示不需要放大。
+        """
+        # 触发线 = 底噪*1.7+60；正常说话应至少达到它的 1.5 倍才有余量
+        # 参照实测：低增益设备上"说话 RMS"约为底噪的 1.4 倍
+        try:
+            nf = float(noise_floor)
+        except (TypeError, ValueError):
+            return 1.0
+        if nf <= 0:
+            return 1.0
+        target = (nf * 1.7 + 60) * 1.5
+        speech_est = nf * 1.4          # 低增益设备上实测的经验比例
+        need = target / max(speech_est, 1.0)
+        return max(1.0, min(need, self.MAX_INPUT_GAIN))
+
+
     def _check_pyaudio(self):
         """检查PyAudio是否可用"""
         try:
@@ -934,6 +1025,23 @@ class MicrophoneService:
                         # 优化：空数组先短路（avoid/stream异常），用均值近似绝对值均值
                         # （近零均值前提下 RMS*0.8 ≈ mean|·|，省去一次 abs 拷贝）
                         vol = self._quick_volume(data)
+                        # ── 输入增益补偿（必须在**触发判断之前**）──
+                        #
+                        # 本机实测输入电平只有正常值的 1/25（说话 RMS≈130，
+                        # 而阈值要 216），于是"听不到→不触发→不录音→没回复"
+                        # 整条链路一次都启动不了（漏斗实测 82 秒 0 次触发）。
+                        #
+                        # ASR 插件自带的 30x 增益只在**录音之后**生效，
+                        # 那时已经太晚 —— 触发判断用的是补偿前的电平。
+                        # 所以这里先放大，让"能不能触发"与"识别质量"
+                        # 建立在同一套电平基准上。
+                        #
+                        # 注意噪声底 `noise_floor` 也用同一个 vol 学习，
+                        # 因此两者同比放大，**阈值与信号的比例关系不变** ——
+                        # 这正是我们要的：放大的是量级，不是选择性。
+                        _g = self.effective_input_gain()
+                        if _g > 1.0:
+                            vol = vol * _g
                         # 声源自动跟随的**当前设备电平**：取近期峰值（滑动），
                         # 供观察者线程与候选设备对比。用 max 而不是平均：
                         # 判据关心的是"这个设备能不能收到声音"，不是平均响度。
