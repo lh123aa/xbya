@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """小忆系统设置对话框"""
 import logging
 from typing import Optional
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 TTS_VOICES = [
     # ── 🎀 女声 ──
     ("🎀 晓晓 · 温暖知性", "zh-CN-XiaoxiaoNeural"),
-    ("🎀 晓伊 · 活泼可爱（欣雅推荐）", "zh-CN-xbyaNeural"),
+    ("🎀 晓伊 · 活泼可爱（欣雅推荐）", "zh-CN-XiaoyiNeural"),
     ("🎀 晓北 · 东北腔·爽朗", "zh-CN-liaoning-XiaobeiNeural"),
     ("🎀 晓妮 · 陕西方言·亲切", "zh-CN-shaanxi-XiaoniNeural"),
     ("🎀 晓嘉 · 粤语女声", "zh-HK-HiuGaaiNeural"),
@@ -155,7 +155,7 @@ class SettingsDialog(QDialog):
         "plugins.llm.params.model": "qwen2.5:1.5b",
         "plugins.asr.params.model_size": "small",
         "plugins.asr.params.device": "cpu",
-        "plugins.tts.params.voice": "zh-CN-xbyaNeural",
+        "plugins.tts.params.voice": "zh-CN-XiaoyiNeural",
         "plugins.tts.params.rate": 0,
         "plugins.tts.params.pitch": 0,
         "voice.hotkey_toggle": "Ctrl+Alt+M",
@@ -753,7 +753,7 @@ class SettingsDialog(QDialog):
         idx = self.asr_device_combo.findText(cfg.get("plugins.asr.params.device", "cpu"))
         self.asr_device_combo.setCurrentIndex(max(idx, 0))
 
-        voice = cfg.get("plugins.tts.params.voice", "zh-CN-xbyaNeural")
+        voice = cfg.get("plugins.tts.params.voice", "zh-CN-XiaoyiNeural")
         idx = self.tts_voice_combo.findData(voice)
         if idx >= 0:
             self.tts_voice_combo.setCurrentIndex(idx)

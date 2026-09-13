@@ -335,24 +335,105 @@ def test_auto_pick_prefers_loudest_device(monkeypatch):
         f"应记录挑选理由（供诊断），实际 {mic._auto_pick_reason!r}"
 
 
-def test_auto_pick_gives_up_when_levels_are_similar(monkeypatch):
-    """各设备电平接近时**不硬猜**，退回按顺序挑选
+def test_auto_pick_prefers_highest_even_when_levels_are_similar(monkeypatch):
+    """电平接近时**仍按最高电平选**，不再退回"取第一个"
 
-    避免"安静环境里随机挑一个"——那会把设备选择变成掷骰子。
+    ## 为什么改了旧契约（旧契约："接近就不硬猜，退回按顺序挑选"）
+
+    旧行为在真机上选错了设备，而且很难看出来：
+      本机 14 个输入设备，自动挑选落到 idx=1，实测三轮读数
+      174 / 156 / 149 —— **用户说话与否都一样**，那是恒定底噪；
+      而真正收到人声的 idx=7 是 6433 / 284 / 126（说话时飙升）。
+      两者**同名**（都叫"麦克风 (Realtek(R) Audio)"），
+      日志只说"区分度不足，退回按顺序挑选"，看不出选错了。
+
+    关键认识：**"取第一个"同样是任意选择，而且没有依据**。
+    电平再弱也是"该设备实际收到了多少声音"的直接测量；
+    设备顺序与"能不能听到用户"没有任何因果关系。
+    宁可相信一个弱信号，也不要一个凭空的选择。
+    （"接近"仍会记进 `_auto_pick_reason`，只是不再推翻测量结果。）
     """
     mic = _patch_fake_devices(monkeypatch)
 
     def _flat_probe(self, seconds=1.2, indices=None):
-        return [{"index": d["index"], "name": d["name"], "ok": True,
-                 "avg": 50.0, "peak": 120.0, "error": ""}
-                for d in self.list_input_devices() if d["kind"] == "mic"]
+        # 两个候选电平接近（50 vs 48），都远高于噪声
+        return [{"index": 1, "name": "mic1", "ok": True,
+                 "avg": 50.0, "peak": 120.0, "error": ""},
+                {"index": 2, "name": "mic2", "ok": True,
+                 "avg": 48.0, "peak": 118.0, "error": ""}]
     monkeypatch.setattr(MicrophoneService, "probe_device_levels", _flat_probe)
     mic.input_device = None
     mic.input_device_name = ""
 
-    assert mic._pick_by_level() is None, "电平接近时不应硬猜"
-    # 整体挑选退回按顺序 → 仍是真实麦克风
-    assert mic._pick_mic_index() in (1, 2)
+    picked = mic._pick_by_level()
+    assert picked == 1, f"应选电平最高的 idx=1（不再返回 None），实际 {picked}"
+    assert mic._pick_mic_index() == 1, \
+        "整体挑选也必须落到实测最高的那个，不能退回'取第一个'"
+    assert mic._auto_pick_reason, "应记录理由供诊断"
+    assert "50" in mic._auto_pick_reason
+
+
+def test_auto_pick_never_returns_unusable_device(monkeypatch):
+    """★ 不能选到"打不开应用采样率"的设备（本机实测踩到）。
+
+    探测循环会依次尝试多个采样率并取第一个成功的，
+    所以"探测成功"只证明某个采样率能开，
+    **不证明监听线程用的 16000Hz 能开**。本机 idx=15 正是如此：
+    探测在 48000 下读到很好的电平，被误判为"最能听到用户"，
+    但监听一 open(16000) 就 -9997。
+    """
+    mic = _patch_fake_devices(monkeypatch)
+
+    def _probe(self, seconds=1.2, indices=None):
+        # idx=15 电平最高，但 ok=False（不支持 16000）→ 不得入选
+        return [{"index": 15, "name": "loud-but-unusable", "ok": False,
+                 "avg": 0.0, "peak": 0.0,
+                 "error": "不支持应用采样率 16000Hz"},
+                {"index": 1, "name": "usable", "ok": True,
+                 "avg": 120.0, "peak": 300.0, "error": ""}]
+    monkeypatch.setattr(MicrophoneService, "probe_device_levels", _probe)
+    mic.input_device = None
+    mic.input_device_name = ""
+
+    picked = mic._pick_by_level()
+    assert picked == 1, (
+        f"ok=False 的设备（打不开应用采样率）不得被选中，实际 {picked}")
+    assert picked != 15
+
+
+def test_probe_marks_devices_that_cannot_open_at_app_rate(monkeypatch):
+    """★ 探测必须显式标注"不支持应用采样率"的设备。
+
+    判据：`_can_open_at_rate` 为 False 的设备，探测结果 ok=False
+    且 error 里说明原因 —— 否则调用方（自动挑选）无从排除它。
+    """
+    from services.microphone_service import MicrophoneService as M
+
+    called = {}
+
+    def _fake_can_open(p, index, rate):
+        called[index] = rate
+        return index != 15          # 15 打不开，其余能开
+    monkeypatch.setattr(M, "_can_open_at_rate", staticmethod(_fake_can_open))
+
+    devs = [{"index": 15, "name": "bad", "kind": "mic", "channels": 2,
+             "native_rate": 48000},
+            {"index": 1, "name": "good", "kind": "mic", "channels": 2,
+             "native_rate": 44100}]
+    monkeypatch.setattr(M, "list_input_devices", staticmethod(lambda *a, **k: devs))
+
+    mic = M.__new__(M)
+    mic.chunk_size = 1024
+    mic.sample_rate = 16000
+    rows = mic.probe_device_levels(seconds=0.05)
+    by_idx = {r["index"]: r for r in rows}
+
+    assert by_idx[15]["ok"] is False, "打不开 16000 的设备必须标为不可用"
+    assert "16000" in by_idx[15]["error"], \
+        f"错误信息应说明是采样率问题，实际 {by_idx[15]['error']!r}"
+    # 验证探的就是应用用的那个采样率
+    assert called.get(1) == 16000, \
+        f"应按应用采样率(16000)验证，实际验的是 {called.get(1)}"
 
 
 def test_set_input_device_by_index(monkeypatch):

@@ -203,14 +203,20 @@ class MicrophoneService:
                 good.append(i)
             p.terminate()
             if good:
-                # 优先选系统默认设备（idx=1 通常是正确的麦克风）
+                # 实测完全不可用（无 numpy / pyaudio 异常）时的**最后兜底**。
+                # 优先系统默认设备；没有再取第一个。
+                #
+                # ⚠️ 这是"没有依据的选择"，所以日志要说清楚 —— 本机实测
+                #    "第一个"往往是同名设备里**收不到人声**的那个（见 _pick_by_level
+                #    的注释）。用户若因此听不见，看到这行日志就知道该显式配置了。
                 pick = good[0]
                 if default_idx is not None and default_idx in good:
                     pick = default_idx
-                logger.info(
-                    "[mic] 自动选中麦克风设备索引 %d（实测电平区分度不足，"
-                    "使用%s设备；多声源时建议显式配置 voice.mic_device）",
-                    pick, "系统默认" if pick == default_idx else "第一个")
+                logger.warning(
+                    "[mic] 实测电平不可用，只能按%s选中 idx=%d —— "
+                    "这个选择没有电平依据，若听不见请显式配置 voice.mic_device"
+                    "（可用 tools/list_mic_devices.py --probe 找出有声音的设备）",
+                    "系统默认" if pick == default_idx else "列表顺序", pick)
                 return pick
         except Exception as e:
             logger.warning(f"[mic] 设备挑选失败，使用默认: {e}")
@@ -255,12 +261,34 @@ class MicrophoneService:
             best = levels[0]
             second = levels[1] if len(levels) > 1 else None
 
-            # 区分度不足：都在底噪水平 → 不硬猜
+            # ★ 区分度不足时，**仍然选电平最高的那个**，不再放弃实测。
+            #
+            # 旧实现这里是 `return None`，把决定权交给兜底逻辑的
+            # "优先系统默认 / 取第一个" —— 而那是个**任意选择**，本机实测
+            # 恰好落在最聋的那个上：
+            #   idx=1 麦克风(Realtek)          avg≈150~206（全程恒定 = 底噪）
+            #   idx=7 麦克风(Realtek)          avg≈997（说话时）
+            # 两者**同名**，而"取第一个"取到 idx=1 ⇒ 用户说话她完全没反应，
+            # 且日志只说"区分度不足，退回按顺序挑选"，看不出问题在哪。
+            #
+            # 为什么"电平最高"即使区分度不足也优于"取第一个"：
+            # 电平是**该设备实际收到了多少声音**的直接测量；
+            # 而"第一个/系统默认"与"能不能听到用户"没有任何因果关系。
+            # 宁可相信一个弱信号，也不要一个没有依据的选择。
+            #
+            # 仍保留"接近"的判断，只是用于**日志措辞**（提示用户可能不准），
+            # 不再用它推翻测量结果。
             if second is not None and best["avg"] < max(30.0, second["avg"] * 2.0):
                 logger.info(
-                    "[mic] 各设备电平接近（最高 %.1f / 次高 %.1f），"
-                    "无法可靠区分，退回按顺序挑选", best["avg"], second["avg"])
-                return None
+                    "[mic] 各设备电平接近（最高 %.1f / 次高 %.1f），区分度不高；"
+                    "仍按实测最高电平选 idx=%d（%s）——多声源时建议显式配置 "
+                    "voice.mic_device 固定设备",
+                    best["avg"], second["avg"], best["index"], best["name"])
+                self._auto_pick_reason = (
+                    f"区分度不高，按最高电平 RMS={best['avg']:.1f}"
+                    f"（次高 {second['avg']:.1f}）"
+                )
+                return int(best["index"])
 
             logger.info(
                 "[mic] 按实测电平自动选中 idx=%d (RMS=%.1f, peak=%.0f, %s)",
@@ -388,6 +416,42 @@ class MicrophoneService:
         logger.info("[mic] 已按名字指定设备 %d (%r)", found, selector)
         return True
 
+    @staticmethod
+    def _can_open_at_rate(p, index: int, rate: int) -> bool:
+        """该设备能否在指定采样率下打开输入流。
+
+        为什么要单独验一次：`probe_device_levels` 会**依次尝试多个采样率**并
+        取第一个成功的，所以"探测成功"只证明"某个采样率能开"，
+        不证明"监听线程用的那个采样率能开"。本机实测两者会分叉
+        （native=48000 的设备在 16000 下直接 -9997），必须显式区分。
+
+        用 `is_format_supported` 先问，比真的 open 一次快且无副作用；
+        它自身抛异常时退回"实际 open 一次"来判断。
+        """
+        try:
+            return bool(p.is_format_supported(
+                rate, input_device=index,
+                input_channels=1, input_format=16))
+        except Exception:
+            pass
+        # 兜底：真开一次再关掉
+        stream = None
+        try:
+            import pyaudio
+            stream = p.open(format=pyaudio.paInt16, channels=1, rate=rate,
+                            input=True, input_device_index=index,
+                            frames_per_buffer=512)
+            return True
+        except Exception:
+            return False
+        finally:
+            if stream is not None:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
+
     def probe_device_levels(self, seconds: float = 1.2,
                             indices: Optional[list[int]] = None) -> list[dict]:
         """逐个设备短采样，返回音量，用于**找出哪个声源真的有声音**。
@@ -416,9 +480,29 @@ class MicrophoneService:
                 idx = dev["index"]
                 entry = {"index": idx, "name": dev["name"],
                          "avg": 0.0, "peak": 0.0, "ok": False, "error": ""}
-                # 采样率候选：原生优先，再退回常见值
+
+                # ★ 先验证"能否在**应用实际使用的采样率**下打开"。
+                #
+                # 这一条是本机实测踩出来的关键缺陷：
+                #   探测循环原来按 `native_rate → 16000 → 48000 → 44100`
+                #   依次尝试，**取第一个能打开的就报告电平**。
+                #   而监听线程永远用 `self.sample_rate`(16000) 打开。
+                #   本机 idx=15/14 的 native=48000 且**不支持 16000**：
+                #   探测在 48000 下读到很好的电平（于是被判为"最能听到用户"），
+                #   但监听线程一 open(16000) 就抛 -9997 Invalid sample rate。
+                #   ⇒ 探测验证的是一个**应用从不使用的配置**，结论没有意义。
+                #   本机 14 个输入设备里有 8 个是这样（14/15/16/18/21/22/23/24）。
+                if not self._can_open_at_rate(p, idx, self.sample_rate):
+                    entry["error"] = (
+                        f"不支持应用采样率 {self.sample_rate}Hz"
+                        f"（原生 {dev.get('native_rate')}Hz），无法用于监听"
+                    )
+                    results.append(entry)
+                    continue
+
+                # 采样率候选：优先用应用实际使用的采样率，保证测的就是监听时会用的配置
                 rates = []
-                for r in (dev["native_rate"], 16000, 48000, 44100):
+                for r in (self.sample_rate, dev["native_rate"], 48000, 44100):
                     if r and r not in rates:
                         rates.append(int(r))
                 opened = False

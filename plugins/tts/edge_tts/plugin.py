@@ -1,4 +1,4 @@
-"""
+﻿"""
 Edge TTS插件
 实现语音合成功能
 """
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class EdgeTTS(TTSEngine):
     """Edge TTS实现"""
 
-    def __init__(self, voice: str = "zh-CN-xbyaNeural",
+    def __init__(self, voice: str = "zh-CN-XiaoyiNeural",
                  rate: int = 0, pitch: int = 0):
         """
         初始化Edge TTS
@@ -83,6 +83,16 @@ class EdgeTTS(TTSEngine):
             loop = asyncio.new_event_loop()
             audio_bytes = loop.run_until_complete(_speak())
             loop.close()
+
+            # 空音频必须当成失败上报：语音名写错时 Edge 不报异常、只回空流，
+            # 调用方拿到 b"" 会静默"合成成功但没声音"，排查时无从下手。
+            if not audio_bytes:
+                logger.error(
+                    f"语音合成返回空音频（音色 '{self.voice}' 可能不存在）："
+                    f"请核对 voice 是否为 Edge 真实音色，"
+                    f"可用 plugins/tts/edge_tts 的 get_available_voices() 列出"
+                )
+                return None
 
             logger.info(f"语音合成完成，音频大小: {len(audio_bytes)} 字节，音色: {self.voice}，语速: {self.rate}%，音调: {self.pitch}Hz")
             return audio_bytes
