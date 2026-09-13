@@ -75,6 +75,54 @@ PRESET_PROVIDERS = {
 class UniversalLLM(LLMEngine):
     """通用 OpenAI 兼容 LLM 实现"""
 
+    @staticmethod
+    def _compose_system_prompt(system_prompt: str = None,
+                               reply_style: str = "concise",
+                               system_prompt_concise: str = None,
+                               system_prompt_detailed: str = None) -> str:
+        """决定最终发给模型的 system message。
+
+        ## 为什么不能"按 reply_style 二选一"
+
+        旧实现是：
+            if reply_style == "detailed" and system_prompt_detailed: 用 detailed
+            elif reply_style == "concise" and system_prompt_concise: 用 concise
+            else:                                                    用 system_prompt
+
+        而**设置界面编辑的正是 `system_prompt`**。于是只要配置里
+        `reply_style` 有值（本机出厂就是 `concise`），用户在设置里写的
+        「人设提示词」就被**整段绕过去**，一个字都到不了模型 ——
+        用户感知正是"人设设定了但没真正加载进角色"。
+        实测：设置里写了 1935 字，模型实际收到的只有内置的 388 字。
+
+        ## 现在的语义（人设与详略分开，各管各的）
+
+        - **`system_prompt` = 人设本身**，无论详略都必须生效（用户可见的设置）；
+        - **`system_prompt_concise` / `system_prompt_detailed` = 详略指令**，
+          作为**附加段**拼在人设之后，而不是把人设替换掉；
+        - 用户没写人设时（空/None），才退回内置默认人设，
+          并保留详略段 —— 这样"没设置过"和"设置过"都合理。
+        """
+        user_persona = (system_prompt or "").strip()
+        style_block = ""
+        if reply_style == "detailed":
+            style_block = (system_prompt_detailed or "").strip()
+        elif reply_style == "concise":
+            style_block = (system_prompt_concise or "").strip()
+
+        if not user_persona:
+            # 用户没写人设：详略段本身就是完整 prompt（保持出厂行为不变）
+            return style_block or "你是欣雅，一个友善的AI桌面管家。"
+
+        if not style_block:
+            return user_persona
+
+        # 用户写了人设 + 有详略段：人设在前（身份），详略在后（本次输出要求）
+        # 用分隔线让模型能分清"我是谁"与"这次该怎么答"
+        if style_block == user_persona:
+            return user_persona          # 两份完全相同就别拼了
+        return f"{user_persona}\n\n---\n\n{style_block}"
+
     def __init__(
         self,
         api_key: str = None,
@@ -127,13 +175,12 @@ class UniversalLLM(LLMEngine):
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
         self.model = model or "gpt-3.5-turbo"
-        # 根据 reply_style 选择对应 system_prompt
-        if reply_style == "detailed" and system_prompt_detailed:
-            self.system_prompt = system_prompt_detailed
-        elif reply_style == "concise" and system_prompt_concise:
-            self.system_prompt = system_prompt_concise
-        else:
-            self.system_prompt = system_prompt or "你是欣雅，一个友善的AI桌面管家。"
+        self.system_prompt = self._compose_system_prompt(
+            system_prompt=system_prompt,
+            reply_style=reply_style,
+            system_prompt_concise=system_prompt_concise,
+            system_prompt_detailed=system_prompt_detailed,
+        )
         self.reply_style = reply_style
         #: 流式总时长硬上限（秒）。超过则用已收到的文本收尾。
         #: 依据：用户要求"回复 2 秒内"，而实测存在 30 秒的超时样本；

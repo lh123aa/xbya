@@ -374,4 +374,75 @@ VRM 分支补上恢复；另加两道闸（恢复完成前不写、贴边态不�
 3. 同一个功能**只能有一条实现路径**（这里是热键与菜单各写一份 → 行为不一致）；
 4. 配置写失败**不能连带破坏功能本身** —— 落盘是"记住"，不是"生效"的前提。
 
+---
+
+## D34 设置里的「人设提示词」没被加载（被 reply_style 分支绕过）
+
+✅ **已修**（用户报告："后台设置中，人设设定好像没有真正的加载到虚拟人设角色中"）
+
+**根因（一处，但很隐蔽）：**
+
+`plugins/llm/openrouter/plugin.py` 的 `UniversalLLM.__init__` 按 `reply_style`
+**二选一**挑 prompt：
+
+```python
+if reply_style == "detailed" and system_prompt_detailed:
+    self.system_prompt = system_prompt_detailed
+elif reply_style == "concise" and system_prompt_concise:
+    self.system_prompt = system_prompt_concise     # ← 出厂走这条
+else:
+    self.system_prompt = system_prompt or "你是欣雅…"   # ← 用户写的人设只在这里用
+```
+
+而**设置界面编辑的字段正是 `system_prompt`**
+（`settings_dialog.py:815`：`cfg.set("plugins.llm.params.system_prompt", …)`）。
+
+出厂配置 `reply_style: concise` 且 `system_prompt_concise` 非空 ⇒
+**用户写的整段人设永远走不到 `else` 分支，一个字都到不了模型。**
+
+**实测数字（不是推测）：**
+
+| | 字数 | 开头 |
+|---|---|---|
+| 设置里 `system_prompt` | **1935** | `北执，收到。既然你要创建一个属于你的"欣雅"…` |
+| `system_prompt_concise`（实际生效） | **388** | `你是欣雅，25岁，住在用户电脑桌面上的温柔学霸小女生…` |
+| 插件实例最终持有的 `system_prompt` | **388** | 同上 —— 证实用户那份被丢弃 |
+
+构造真实插件实例验证：`inst.system_prompt` 长度 388，`user in inst.system_prompt == False`。
+
+**修复（把"人设"与"详略"分开，各管各的）：**
+
+- `system_prompt` = **人设本体**，无论详略都必须生效（这是用户在设置里能看见的东西）；
+- `system_prompt_concise` / `system_prompt_detailed` = **详略指令**，
+  作为**附加段**拼在人设之后，而**不是把人设替换掉**；
+- 用户没写人设时才回退详略段（保持出厂行为不变）。
+
+修复后实测：最终 system message **2330 字**，开头是用户那份人设，
+结尾是 concise 详略段 —— 两者并存。
+
+**影响面**：**只有 `openrouter` 插件有此缺陷**。
+`openai_api` 与 `ollama` 一直是直接使用 `system_prompt`，没有这个分支。
+
+**⚠️ 测试侧我踩了一个值得记下来的坑：**
+
+第一版用例直接调 `UniversalLLM._compose_system_prompt(...)` 这个 helper
+（因为它是纯函数、好测）。反向验证时，我把 `__init__` 里的选择逻辑
+**退回旧实现**，结果 **9/10 条用例照样全绿** ——
+因为 bug 在"**谁被调用**"这一层接线，而我测的是被调用的那个函数本身。
+
+改为**经构造函数**（`UniversalLLM(**params).system_prompt`）后，
+同一组回归立刻有 **4 条**变红。
+
+**留下的判据：**
+
+1. **"配置项存在" ≠ "配置项接线"** —— 这里的 `system_prompt` 确实被读、
+   确实被存、确实被传进构造函数，却在一个二选一分支里被静默丢弃。
+   排查这类问题要看**最终对象持有的值**，不是看"有没有读这个键"；
+2. **同一概念有两个键、又有个分支去"选一个"时，必须问清楚"用户改的是哪个"** ——
+   设置界面写 A、运行时用 B，是这类缺陷的通用形状；
+3. **用例要钉住最终对象的状态，不能只测 helper** ——
+   否则"谁被调用"的接线错误测不出来（这一条是用一次假绿换来的）；
+4. 修"选择逻辑"时保留出厂行为：没写人设的用户，体验必须和以前一样。
+
+
 
