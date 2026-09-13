@@ -892,4 +892,171 @@ HybridRouter 在 LLM 不可用时无条件 `return rule_cmd`，
 13. **"测试全绿"可能是在为缺陷背书** —— 改行为前先看旧用例断言了什么，
     如果断言本身就是错的，要改的是用例并写明理由，而不是迁就它。
 
+---
+
+## D49 配置指向不存在的插件，且"没加载"的判据是 `is None`
+
+**发现方式**：系统性功能完整性审计 —— `tools/audit_plugin_params.py`
+（配置键 vs 构造函数签名）先报"类不存在"，再追到 `tools/audit_dead_engines.py`。
+
+**证据全文**：`docs/agent/evidence/d49_dead_engines.md`
+
+### 三层现象
+
+| 层 | 现象 | 实测 |
+|----|------|------|
+| 1 | 配置里的引擎名指向**不存在的插件** | `plugins/embedding/embed_anything/` 与 `plugins/vector_db/leann/` 里**只有 0 字节 `__init__.py`**，**没有 `plugin.py`** |
+| 2 | "降级到全文搜索"的判据**接不住空对象** | 加载失败拿到的是 `NullEmbedding` / `NullVectorDB`，**不是 `None`** ⇒ `is None` 永真不了 |
+| 3 | 真正触发的分支**给不出归因** | 日志只有一句「查询向量化失败」，**没有一处说"因为配置写的引擎不存在"** |
+
+`scan()` 的判据是"目录下有没有 `plugin.py`"（`core/plugin_loader.py:108`），
+所以这两个目录**被整个跳过**——连"发现插件"的日志都不出现。
+
+### 严重性：低（但必须修，理由可核对）
+
+三条判据都是命令可复核的空结果：
+
+| 判据 | 结果 | 命令 |
+|------|------|------|
+| `semantic_search()` 有生产调用者吗 | **0 个** | `git grep -n 'semantic_search' -- '*.py'` |
+| `get_file_service()` 有调用者吗 | **0 个** | `git grep -n 'get_file_service' -- '*.py'` |
+| `core/app.py` 用 `FileService` 吗 | **不用** | `Select-String -Path core\app.py -Pattern 'FileService'` |
+
+即**整条子系统不可达**。修它的理由不是"用户正在受害"，而是
+**配置在说谎**：下一个读配置的人会以为语义搜索可用。
+
+### 修复
+
+1. **配置不再说谎**：两个引擎显式置 `null`（`config.yaml` + `DEFAULT_CONFIG`）。
+   语义是"本能力当前无后端"——这是事实；写一个不存在的引擎名是误导。
+2. **判据换成问插件自己**：新增 `_embedding_unavailable()` / `_vector_db_unavailable()`，
+   判 `is_available()`（空对象按契约返回 `False`），**不用 `is None`**。
+3. **归因补上**：`FileService._degraded` 记下"哪个配置键、写的是什么、为什么失败"，
+   降级日志点名它。
+
+**实测（改前 → 改后）**：
+
+```
+改前: [ERROR] 查询向量化失败                     ← 没有归因
+改后: [WARNING] 语义搜索不可用，改用全文搜索（原因：embedding:
+      plugins.embedding.engine 写的是 'embed_anything'，但插件加载器里
+      没有这个插件（要求目录下存在 plugin.py）；...）
+```
+
+**反方向验证（两次，都做了）**：
+
+| 拆掉什么 | 结果 |
+|---------|------|
+| 判据退回 `is None` | `test_degrade_actually_calls_fulltext_search` + `test_degrade_warning_logs_the_reason` **2 failed** |
+| 日志里的原因换成固定串 | `test_degrade_warning_logs_the_reason` **1 failed** |
+
+注意红的是**接线用例**，不是"存在性用例"——这是刻意的：本文件既有 8 条里
+有 5 条只断言 `_degraded` 的内容，那部分靠构造数据就能过；真正钉住"降级有没有发生"
+的只有那两条。
+
+### ⚠️ 我自己在这一轮读错了一次
+
+第一版探针我把"第 212 行 `query_vector is None` 会不会走到"写成了"不会"，
+判据是"`NullEmbedding.embed()` 返回 `[]`"。
+
+**那是读串了行**：我在探针的第 4 节里先调过一次 `embed()` 才打印，
+把相邻的 `vector_db.add()` 那个 `AttributeError` 看成了 `embed()` 的返回值。
+逐行复核后更正为：`NullEmbedding.embed()` **返回 `None`**
+（`interfaces/embedding.py:65`），所以那一段**会走到**。
+
+**用户可见结果不变（都是 `[]`），但归属行变了** ——
+归属错了就会去修错地方。这条更正已写进 `tools/audit_d49_semantic.py` 的输出里，
+不靠"我记得我改过"。
+
+---
+
+## D50 插件加载结果依赖"别人有没有先调 scan()"（比 D49 严重）
+
+**发现方式**：修 D49 时，降级日志里冒出一句 `ERROR 插件不存在: watchfiles`。
+但**我手写 `scan()` 之后 `load("watchfiles")` 明明是成功的** ——
+两个结论互相矛盾，于是追下去。
+
+**这是本轮最值得写的一条**：它不报错、不缺功能、App 里跑起来一切正常。
+
+### 根因：单例的"初始化责任"没有归属
+
+```python
+# core/app.py:152-153   ← 只有这里代劳
+self.plugin_loader = get_plugin_loader()
+plugins = self.plugin_loader.scan()
+
+# services/file_service.py:26 / voice_service.py:26 / ai_service.py:24
+self.plugin_loader = get_plugin_loader()   # ← 只拿单例，不扫盘
+```
+
+三个 Service **默认"别人已经扫过了"**。于是同一个 `FileService()` 有两副面孔：
+
+| 构造时机 | `loader.plugins` | `file_monitor` 实际类型 |
+|---------|-----------------|----------------------|
+| 在 `App` 之后（App 扫过盘） | 9 个 | `WatchfilesMonitor` ✅ |
+| 独立构造 / 在 App 之前 | **0 个** | `NullFileMonitor` ❌ |
+
+**受控 A/B 实测**（`tools/audit_d50_order.py`，同一个类、只改顺序）：
+
+```
+甲. 先 scan() 再构造：单例 plugins 键数 = 9  → file_monitor = WatchfilesMonitor
+乙. 重置成"从未 scan"：单例 plugins 键数 = 0  → file_monitor = NullFileMonitor
+```
+
+### 为什么"报错消息本身"也是缺陷
+
+```
+[ERROR] 插件不存在: watchfiles
+```
+
+**这句话是错的。** 真相是"**这个 loader 还没发现任何插件**"。
+两种完全不同的故障（真没有 / 没扫盘）在日志里长得一模一样，
+读日志的人会被引向"去查插件目录"，而问题在调用顺序。
+
+### 修复
+
+1. **懒扫盘**：`load()` 在 `plugins` 里找不到时，若从未扫过盘就先 `self.scan()`。
+   新增 `self._scanned` 标志（**不用 `if not self.plugins`** ——
+   "扫过了但一个插件都没有"是合法状态，那种情况下不该每次 load 都重扫磁盘）。
+2. **报错自证**：消息改成
+   `插件不存在: X（扫描目录 plugins，已发现 9 个: [...]）` ——
+   空列表就是"没扫盘"，一眼可辨。
+
+**实测（改前 → 改后）**：独立构造 `FileService()`
+`file_monitor` 由 `NullFileMonitor` → **`WatchfilesMonitor`**。
+
+### 反方向验证
+
+拆掉懒扫盘 + 报错自证 → **5 failed / 5**，且**拆后的文件 `py_compile` 通过**
+（说明红的是断言失败，不是导入错误）。
+
+> ⚠️ **第一次拆的时候我拆坏了**：只删了 `if` 的执行体，留下空 `if` →
+> `IndentationError` → pytest **收集期**报错。那**不能**算"用例变红"，
+> 证明力弱得多（任何语法错误都会让它红）。改成整段替换后才是有意义的验证。
+
+> ⚠️ **还有一次假绿**：我用 `python -c` 做字符串替换，PowerShell 把多行字符串里的
+> 引号吃掉了，脚本 `SyntaxError` 退出 —— 而 pytest 紧接着打的是
+> **「5 passed」**。差一点就记下"反方向验证通过"。
+> 判据：**替换脚本自己必须断言"文件确实变了"**（`assert s != before`），
+> 否则"没改成"与"改对了"在输出上无法区分。这条已写进 `tools/_d50_reverse.py`。
+
+### 留下的判据（D49 + D50 共用）
+
+14. **"没加载"不等于 `None`** —— 本项目凡是用空对象
+    （`NullEmbedding` / `NullVectorDB` / `NullFileMonitor` …）做降级的地方，
+    `x is None` **一律接不住**。空对象有自己的契约：`is_available()` 返回 `False`。
+    检查方法：`git grep -n 'is None'` 逐处核对它判的是不是空对象；
+15. **配置里的引擎名必须能在 `scan()` 输出里找到** ——
+    判据不是"目录存在"，而是"目录里有 `plugin.py`"。
+    0 字节的 `__init__.py` 让目录**看起来**像插件包（`git grep` 找目录名会命中），
+    `scan()` 却看不见它，两边不一致；
+16. **报错要能追到"哪一行配置"或"我确实找过"** ——
+    「插件不存在: X」与「查询向量化失败」都是**没有归因**的日志：
+    说的是症状，不是原因。判据：**用户看到的那条错误里，
+    能不能读出该改哪个配置键 / 该换哪条调用路径**；
+17. **单例的初始化责任必须有归属** ——
+    凡是"别人调过我才对"的初始化，早晚会在某个入口上失效，
+    而且**失效时是静默降级**（拿到空对象，功能消失但不报错）。
+    判据：**同一个类的两次构造，结果不该取决于谁先跑**。
+
 

@@ -57,14 +57,17 @@ class ConfigManager:
                     "base_url": "http://localhost:11434"
                 }
             },
+            # D49：这两个能力**当前没有可用后端**（目录下没有 plugin.py），
+            # 默认值原先是 `embed_anything` / `leann` —— 那是**不存在的引擎名**，
+            # 会让新装的机器复制同一份"配置说谎"。显式 null = 事实。
             "embedding": {
-                "engine": "embed_anything",
+                "engine": None,
                 "params": {
                     "model": "BAAI/bge-small-zh"
                 }
             },
             "vector_db": {
-                "engine": "leann",
+                "engine": None,
                 "params": {
                     "storage_path": "./data/vectordb"
                 }

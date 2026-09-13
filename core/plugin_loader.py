@@ -82,7 +82,11 @@ class PluginLoader:
         self.plugins_dir = Path(plugins_dir)
         self.plugins: Dict[str, PluginInfo] = {}
         self.loaded_plugins: Dict[str, Any] = {}
-        
+        #: 是否已经扫过盘（D50）。`load()` 靠它决定要不要补扫 ——
+        #: 用独立标志而不是 `if not self.plugins`，因为"扫过了但一个插件都没有"
+        #: 是合法状态，那种情况下不该每次 load 都重扫一遍磁盘。
+        self._scanned = False
+
         # 确保插件目录存在
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
     
@@ -94,6 +98,9 @@ class PluginLoader:
             插件信息列表
         """
         plugin_list = []
+        # 记下"扫过了"（D50）：即使一个插件都没发现也算扫过，
+        # 否则 `load()` 会在空目录上反复重扫。
+        self._scanned = True
         
         # 遍历插件类型目录
         for plugin_type_dir in self.plugins_dir.iterdir():
@@ -188,7 +195,28 @@ class PluginLoader:
             插件实例，失败返回None
         """
         if plugin_name not in self.plugins:
-            logger.error(f"插件不存在: {plugin_name}")
+            # D50：**懒扫盘**。`get_plugin_loader()` 是单例，但"谁负责 scan()"
+            # 原先没有归属 —— `core/app.py:153` 会代劳，而
+            # `FileService` / `VoiceService` / `AiService` 的 __init__ 只是
+            # 拿单例、不扫盘，**默认"别人已经扫过了"**。
+            # 于是同一个 `FileService()` 出现两副面孔：
+            #   · 在 App 之后构造 → 插件齐全（撞巧对了）
+            #   · 独立构造（脚本/测试/别的入口）→ `plugins` 是空字典
+            #     → 每次 load 都打「插件不存在: X」
+            # 那条消息**是错的**：不是插件不存在，是这个 loader 还没发现任何插件。
+            # 现在第一次 load 时自己补扫，让结果**不再取决于调用顺序**。
+            if not self._scanned:
+                self.scan()
+
+        if plugin_name not in self.plugins:
+            # 报错要能自证"我确实找过"。只写「插件不存在」时，
+            # 读日志的人无法区分"插件真没有"与"这个 loader 没扫盘"（D50）。
+            # 把**已发现的插件名**列出来，"没扫盘"（空列表）一眼可辨。
+            known = sorted(self.plugins.keys())
+            logger.error(
+                "插件不存在: %s（扫描目录 %s，已发现 %d 个: %s）",
+                plugin_name, self.plugins_dir, len(known), known or "无",
+            )
             return None
         
         # 检查是否已加载

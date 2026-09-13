@@ -30,6 +30,15 @@ class FileService:
         self.file_monitor = None
         self.embedding = None
         self.vector_db = None
+
+        #: 能力名 -> 降级原因（D49）。空 = 该能力真的可用。
+        #:
+        #: 为什么需要它：加载失败时这里拿到的是**空对象**（NullEmbedding /
+        #: NullVectorDB），不是 None；而 `semantic_search` 原先的判据是
+        #: `is None`，**永远接不住空对象**，于是"降级到全文搜索"那条路不可达，
+        #: 用户只会看到一句没有归因的「查询向量化失败」。
+        #: 把"为什么降级"记在这里，日志里就能点名**要改哪个配置键**。
+        self._degraded: Dict[str, str] = {}
         
         # 监控目录
         self.watch_dirs: List[str] = []
@@ -74,8 +83,15 @@ class FileService:
                     logger.info(f"Embedding插件加载成功: {embedding_engine}")
                 else:
                     logger.warning(f"Embedding插件加载失败: {embedding_engine}")
+                    self._degraded["embedding"] = (
+                        f"plugins.embedding.engine 写的是 '{embedding_engine}'，"
+                        f"但插件加载器里没有这个插件（要求目录下存在 plugin.py）"
+                    )
                     self.embedding = self.plugin_loader.load_by_interface("EmbeddingEngine")
             else:
+                self._degraded["embedding"] = (
+                    f"plugins.embedding.engine = {embedding_engine!r}（该能力已禁用）"
+                )
                 self.embedding = self.plugin_loader.load_by_interface("EmbeddingEngine")
             
             # 加载VectorDB插件
@@ -88,8 +104,15 @@ class FileService:
                     logger.info(f"VectorDB插件加载成功: {vectordb_engine}")
                 else:
                     logger.warning(f"VectorDB插件加载失败: {vectordb_engine}")
+                    self._degraded["vector_db"] = (
+                        f"plugins.vector_db.engine 写的是 '{vectordb_engine}'，"
+                        f"但插件加载器里没有这个插件（要求目录下存在 plugin.py）"
+                    )
                     self.vector_db = self.plugin_loader.load_by_interface("VectorDBEngine")
             else:
+                self._degraded["vector_db"] = (
+                    f"plugins.vector_db.engine = {vectordb_engine!r}（该能力已禁用）"
+                )
                 self.vector_db = self.plugin_loader.load_by_interface("VectorDBEngine")
             
             # 初始化数据库
@@ -391,6 +414,40 @@ class FileService:
             logger.error(f"搜索文件失败: {e}")
             return []
     
+    def _embedding_unavailable(self) -> bool:
+        """embedding 插件是否不可用。
+
+        三级判断，从强到弱：
+          1. 根本没拿到实例 → 不可用
+          2. 实例自报 `is_available() is False` → 不可用（空对象走这条）
+          3. 没有 `is_available` 接口 → 视为可用（不确定时不假装能判）
+
+        注意第 2 条是**判空对象的唯一可靠方式**，不能用 `is None` 代替。
+        """
+        if self.embedding is None:
+            return True
+        getter = getattr(self.embedding, "is_available", None)
+        if callable(getter):
+            try:
+                return not bool(getter())
+            except Exception as e:      # 插件自报异常：按不可用处理，但要说出来
+                logger.warning("embedding.is_available() 抛异常: %s", e)
+                return True
+        return False
+
+    def _vector_db_unavailable(self) -> bool:
+        """vector_db 插件是否不可用。判据同 `_embedding_unavailable`。"""
+        if self.vector_db is None:
+            return True
+        getter = getattr(self.vector_db, "is_available", None)
+        if callable(getter):
+            try:
+                return not bool(getter())
+            except Exception as e:
+                logger.warning("vector_db.is_available() 抛异常: %s", e)
+                return True
+        return False
+
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         语义搜索（基于向量）
@@ -403,13 +460,20 @@ class FileService:
             搜索结果列表
         """
         try:
-            if self.embedding is None or self.vector_db is None:
-                logger.warning("语义搜索插件未初始化，使用全文搜索")
+            # 判据不能是 `is None`：加载失败时拿到的是**空对象**，不是 None，
+            # 所以那句 `is None` 永远不成立，"降级到全文搜索"实际不可达（D49）。
+            # 正确的问法是"**这个插件自己说它可用吗**" —— 空对象的
+            # `is_available()` 返回 False，这是它自己的契约。
+            if self._embedding_unavailable() or self._vector_db_unavailable():
+                why = '；'.join(
+                    f'{k}: {v}' for k, v in sorted(self._degraded.items())
+                ) or '插件未初始化'
+                logger.warning("语义搜索不可用，改用全文搜索（原因：%s）", why)
                 return self.search_files(query, top_k)
             
             # 将查询转换为向量
             query_vector = self.embedding.embed(query)
-            if query_vector is None:
+            if query_vector is None or len(query_vector) == 0:
                 logger.error("查询向量化失败")
                 return []
             
