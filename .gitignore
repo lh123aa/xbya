@@ -37,3 +37,6 @@ logs/
 
 # 临时音频（回环/ASR 落盘产物；正式证据在 docs/agent/evidence/voice/）
 *.tmp.wav
+
+# 换形象辅助工具的工作产物（标尺图/复核图，可再生，体积大）
+resources/source/_*.png

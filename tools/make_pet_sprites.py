@@ -945,6 +945,7 @@ def main() -> int:
         old = sha_tree(dest)
         print(f"  比对 {dest.relative_to(ROOT)}：{len(old)} 个既有帧")
     total = 0
+    logger_kept: list = []          # 被保留的"ANIMS 之外"的动画名
     for anim, (n, fn) in ANIMS.items():
         d = dest / anim
         if not args.verify:
@@ -958,9 +959,32 @@ def main() -> int:
         total += n
     man = {"size": [base.size[0], base.size[1]],
            "animations": {a: {"fps": 12, "loop": a != "talk"} for a in ANIMS}}
+    # ── 保留 ANIMS 之外的"外部动画"（如手工添加的 wander）──
+    #
+    # ⚠️ 缺陷：manifest 原先**只**由 ANIMS 生成，于是重跑生成器会把
+    #    ANIMS 之外的动画从 manifest 里**静默删掉**，而它们的帧目录还在。
+    #    后果不是"多占点磁盘" —— 加载器 `AnimationController.load_pet`
+    #    是按 `manifest["animations"]` 逐个加载的（`animation/controller.py:63`），
+    #    **不在 manifest 里 = 永远不加载**，那 20 帧等于白生成。
+    #
+    #    实测已存在这个状态：`xbya/wander/` 有 20 帧，但它的 manifest 里
+    #    没有 `wander` —— 正是某次重跑留下的孤儿。
+    #
+    #    判据：manifest 是"加载清单"，不是"生成清单"。凡磁盘上存在且
+    #    形如帧目录的动画，都要在清单里，否则用户看到的是"生成了却没生效"。
+    if dest.is_dir():
+        for d in sorted(dest.iterdir()):
+            if not d.is_dir() or d.name in man["animations"]:
+                continue
+            if not list(d.glob("frame_*.png")):
+                continue          # 空目录/非帧目录不算动画
+            man["animations"][d.name] = {"fps": 12, "loop": True}
+            logger_kept.append(d.name)
     if not args.verify:
         (dest / "manifest.json").write_text(
             json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
+    if logger_kept:
+        print(f"  保留 ANIMS 之外的动画（磁盘上已有帧）: {', '.join(logger_kept)}")
     print(f"  共 {total} 帧  manifest.size = {man['size']}")
     if args.verify:
         new = sha_tree(dest)
@@ -970,7 +994,15 @@ def main() -> int:
         for k in diff[:8]:
             print(f"    ✘ 不同: {k}")
         return 0 if same == len(old) else 1
-    print(f"  → {dest.relative_to(ROOT)}")
+    # ⚠️ `--out` 允许指向仓库**之外**（测试/对比生成会这么用），
+    #    此时 `relative_to(ROOT)` 会抛 ValueError 让整个生成**在最后一步崩掉** ——
+    #    帧其实已经全部写好了，只有收尾这行打印失败（实测踩到）。
+    #    所以这里必须容错：能相对就相对，不能就打印绝对路径。
+    try:
+        shown = dest.relative_to(ROOT)
+    except ValueError:
+        shown = dest
+    print(f"  → {shown}")
     return 0
 
 

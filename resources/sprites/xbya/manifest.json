@@ -39,6 +39,10 @@
     "dance": {
       "fps": 12,
       "loop": true
+    },
+    "wander": {
+      "fps": 12,
+      "loop": true
     }
   }
 }
