@@ -257,10 +257,10 @@ _query.addQueryItem('_t', str(int(time.time() * 1000)))   # 只影响 ?model=
 二、用产品同一套 QUrlQuery 真的拼一次（不是复刻逻辑，是真调用）
 ==============================================================================
 
-URL: file:///E:/程序/桌面宠物/xiaoyi-vrm-worktree/assets/vrm/viewer.html?model=E:%5C程序%5C桌面宠物%5Cxiaoyi-vrm-worktree%5Cassets%5Cvrm%5Ccat.vrm&_t=1757000000000&pfm=low&yaw=0...
+URL: file:///E:/程序/桌面宠物/xbya-vrm-worktree/assets/vrm/viewer.html?model=E:%5C程序%5C桌面宠物%5Cxbya-vrm-worktree%5Cassets%5Cvrm%5Ccat.vrm&_t=1757000000000&pfm=low&yaw=0...
 
 解析回来的参数：
-  model = E:\程序\桌面宠物\xiaoyi-vrm-worktree\assets\vrm\cat.vrm
+  model = E:\程序\桌面宠物\xbya-vrm-worktree\assets\vrm\cat.vrm
   _t = 1757000000000
   pfm = low
   yaw = 0

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 项目路径: `E:\程序\桌面宠物\xiaoyi-desktop-pet`，Windows，Python 3.12
+- 项目路径: `E:\程序\桌面宠物\xbya-desktop-pet`，Windows，Python 3.12
 - 无唤醒词模式；说话判定音量阈值 speech_volume=300（int16 平均振幅）
 - 单次监听最长 max_listen_seconds=10 秒
 - TTS 播放期间暂停监听，播完冷却 echo_cooldown=3 秒
@@ -639,7 +639,7 @@ python run.py
 ```bash
 pyinstaller build.spec --noconfirm --clean
 ```
-预期：dist/XiaoYiPet/XiaoYiPet.exe 生成
+预期：dist/xbyaPet/xbyaPet.exe 生成
 
 - [ ] **Step 5: Commit**
 

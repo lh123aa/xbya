@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(r"E:\程序\桌面宠物\xiaoyi-vrm-worktree")
+ROOT = Path(r"E:\程序\桌面宠物\xbya-vrm-worktree")
 TASKS = ROOT / "docs" / "agent" / "tasks-p5.json"
 
 #: 编号 → (新状态, 证据路径列表)

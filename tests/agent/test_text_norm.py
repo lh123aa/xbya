@@ -165,6 +165,19 @@ class TestT2SChars:
         bad = [c for c in T2S_AMBIGUOUS_TRAD if c in T2S_CHARS]
         assert bad == [], f"歧义繁体字混进字级表：{bad}"
 
+    def test_speak_words_are_normalized(self):
+        """`說話` 必须归一成 `说话`（不能留半繁半简）
+
+        实测缺口：`說` 在表里但 `話` 不在，于是 `說話` → `说話` ——
+        **半繁半简**。这比全繁更隐蔽：人一眼看不出错，路由匹配 `说话`
+        却匹配不到，用户说"你能说话吗"会被当成闲聊。
+        补录那两个字时把这条钉住。
+        """
+        assert to_simplified("說話") == "说话"
+        assert to_simplified("那你也說話嗎?") == "那你也说话吗?"
+        # 詞表级优先：`搜尋` 走的是整词映射 → `搜索`（不是逐字的 `搜寻`）
+        assert to_simplified("搜尋") == "搜索"
+
 
 class TestRouterVocabularyCoverage:
     """**覆盖合同**：规则路由词表的繁体写法必须能归一化回简体关键词

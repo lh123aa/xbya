@@ -34,7 +34,7 @@ class TestGetTmpDir:
     def test_creates_dir(self):
         d = get_tmp_dir()
         assert os.path.isdir(d)
-        assert d.endswith("xiaoyi_pet")
+        assert d.endswith("xbya_pet")
 
 
 class TestCleanupOldFiles:

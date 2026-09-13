@@ -12,7 +12,7 @@ import requests
 VRD_API = "https://api.vroid.com/api/1.0/models"
 HEADERS = {
     "Accept": "application/json",
-    "User-Agent": "XiaoYiPet/2.0"
+    "User-Agent": "xbyaPet/2.0"
 }
 
 

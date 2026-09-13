@@ -42,6 +42,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 
@@ -49,7 +51,7 @@ CONFIG = PROJECT / "config.yaml"
 BACKUP = PROJECT / "config.yaml.manual_backup"
 STATE = PROJECT / "docs" / "agent" / "evidence" / "manual" / ".sandbox.json"
 
-SANDBOX = Path(tempfile.gettempdir()) / "xiaoyi_manual"
+SANDBOX = Path(tempfile.gettempdir()) / "xbya_manual"
 
 #: 1x1 透明 PNG（最小合法 PNG）—— 素材要能被真实识图算作图片文件，但不必好看
 _TINY_PNG = base64.b64decode(
@@ -120,14 +122,46 @@ def cmd_init(args) -> int:
         BACKUP.unlink(missing_ok=True)
         _say("[x] 在 config.yaml 里找不到 `path_whitelist:` 行 —— 不敢乱改，已还原备份")
         return 1
-    if '"' in lines[idx] and "xiaoyi_manual" in lines[idx]:
+    # 判定"已经是沙箱模式"看的是 `xbya_manual` 这个标记，**不是引号风格** ——
+    # 原先这里写的是 `'"' in lines[idx] and ...`，在路径改用单引号之后
+    # 前半句永远为假，于是这个守卫变成**死代码**（重复 init 时不再拦）。
+    # 教训：守卫条件里不要掺与意图无关的细节（引号风格会变，"是不是沙箱"不会）。
+    if idx >= 0 and "xbya_manual" in lines[idx]:
         _say("[!] 白名单看起来已经是沙箱模式了；继续只会重复覆盖。")
+        _say("    若上次验收没做完，先 restore 再重跑 init。")
         BACKUP.unlink(missing_ok=True)
         return 1
-    dirs = ", ".join(f'"{SANDBOX / d}"' for d in WHITELIST_DIRS)
-    lines[idx] = f"    path_whitelist: [{dirs}]        # P4-A3 人工验收临时覆盖，用完 restore\n"
-    CONFIG.write_text("".join(lines), encoding="utf-8")
-    _say("[3/4] 白名单已临时改为沙箱四目录（其余配置字节未动）")
+    # ⚠️ 路径必须用**单引号**包，不能用双引号。
+    #
+    # 这里踩过一次，代价是**整份 config.yaml 被应用重写成默认值**（213 行 → 65 行）：
+    # YAML 的**双引号标量里反斜杠是转义符**，而 Windows 路径 `C:\Users\...` 里的
+    # `\U` 被当成 Unicode 转义的开头 ⇒ `expected escape sequence of 8 hexadecimal
+    # numbers`。应用启动时读失败 → `ConfigManager` 回退默认值 → 随后把默认值
+    # **保存回磁盘**，用户的配置就此丢失（这次靠 BACKUP 救回来）。
+    #
+    # 单引号标量里没有转义，路径原样保留，`yaml.safe_load` 回读与写入逐字一致。
+    dirs = ", ".join(f"'{SANDBOX / d}'" for d in WHITELIST_DIRS)
+    new_line = f"    path_whitelist: [{dirs}]        # P4-A3 人工验收临时覆盖，用完 restore\n"
+    lines[idx] = new_line
+    candidate = "".join(lines)
+
+    # 写盘**之前**先解析一遍：宁可这里失败（备份还在、文件没动），
+    # 也不要写出一个能让应用读失败并把配置重写成默认值的文件。
+    try:
+        parsed = yaml.safe_load(candidate)
+    except Exception as e:                                       # noqa: BLE001
+        _say(f"[x] 改完之后的 YAML 解析不过：{type(e).__name__}: {str(e)[:160]}")
+        _say("    已中止，config.yaml **没有被改动**（备份仍保留）")
+        return 1
+    got = (((parsed or {}).get("agent") or {}).get("safety") or {}).get("path_whitelist")
+    want = [str(SANDBOX / d) for d in WHITELIST_DIRS]
+    if not isinstance(got, list) or [str(x) for x in got] != want:
+        _say(f"[x] 回读白名单与预期不符：{got!r}")
+        _say("    已中止，config.yaml **没有被改动**")
+        return 1
+
+    CONFIG.write_text(candidate, encoding="utf-8")
+    _say("[3/4] 白名单已临时改为沙箱四目录（其余配置字节未动；改前已用 YAML 解析验证）")
 
     # ── 4. 记录状态，供 status / check 用 ──
     STATE.parent.mkdir(parents=True, exist_ok=True)
@@ -156,7 +190,7 @@ def cmd_status(args) -> int:
     text = _read_config_text()
     lines = text.splitlines(keepends=True)
     idx = _whitelist_line_index(lines)
-    active = idx >= 0 and "xiaoyi_manual" in lines[idx]
+    active = idx >= 0 and "xbya_manual" in lines[idx]
     _say(f"沙箱模式: {'开' if active else '关'}")
     _say(f"配置文件  : {CONFIG}")
     _say(f"备份存在  : {BACKUP.exists()}")

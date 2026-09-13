@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(r"E:\程序\桌面宠物\xiaoyi-vrm-worktree")
+ROOT = Path(r"E:\程序\桌面宠物\xbya-vrm-worktree")
 TASKS = ROOT / "docs" / "agent" / "tasks-p5.json"
 
 data = json.loads(TASKS.read_text(encoding="utf-8"))

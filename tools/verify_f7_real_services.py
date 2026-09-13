@@ -51,10 +51,10 @@ def main() -> int:
     print(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 72)
 
-    from core.app import XiaoyiApp
+    from core.app import xbyaApp
     from core.kernel.events import EventTypes
 
-    app = XiaoyiApp()
+    app = xbyaApp()
     if not app.initialize():
         print(f"{FAIL} 应用初始化失败")
         return 1

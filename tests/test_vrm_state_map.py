@@ -24,15 +24,14 @@ from animation.vrm_state_map import (
 )
 
 #: JS 侧真正支持的 7 个状态（映射值域硬边界）
-JS_STATES = {"idle", "talk", "think", "listen", "sleep", "happy", "sad"}
+JS_STATES = {"idle", "talk", "think", "listen", "happy", "sad"}
 
-#: 基础 7 状态 → 直连映射
+#: 基础状态 → 直连映射
 EXPECTED_VRM = {
     "idle": "idle",
     "talk": "talk",
     "think": "think",
     "listen": "listen",
-    "sleep": "sleep",
     "happy": "happy",
     "sad": "sad",
 }
@@ -43,7 +42,6 @@ EXPECTED_FALLBACKS = {
     "surprise": "idle",
     "love": "happy",
     "dance": "idle",
-    "wander": "idle",
     "stare": "idle",
     "calm_down": "idle",
     "comfort": "idle",
@@ -57,14 +55,12 @@ EXPECTED_EXPRESSIONS = {
     "talk": "neutral",
     "think": "neutral",
     "listen": "neutral",
-    "sleep": "relaxed",
     "happy": "happy",
     "sad": "sad",
     "angry": "angry",
     "surprise": "surprised",
     "love": "happy",
     "dance": "happy",
-    "wander": "neutral",
     "stare": "neutral",
     "calm_down": "relaxed",
     "comfort": "relaxed",
@@ -77,14 +73,15 @@ class TestStateToVrm:
     """STATE_TO_VRM 映射表"""
 
     def test_standard_states_constant(self):
-        """标准状态集包含基础 7 状态与新增情绪/交互状态"""
+        """标准状态集包含基础状态与新增情绪/交互状态"""
         expected = set(EXPECTED_VRM) | set(EXPECTED_FALLBACKS)
         assert set(STANDARD_STATES) == expected
-        assert len(STANDARD_STATES) == 17
+        assert len(STANDARD_STATES) == 15
 
-    def test_base_seven_present(self):
-        """基础 7 状态必须在标准状态集中"""
-        assert JS_STATES <= set(STANDARD_STATES)
+    def test_base_states_present(self):
+        """基础状态必须在标准状态集中（sleep 已移除）"""
+        base_without_sleep = JS_STATES - {"sleep"}
+        assert base_without_sleep <= set(STANDARD_STATES)
 
     def test_covers_all_standard_states(self):
         """映射表覆盖全部标准状态"""
@@ -123,9 +120,9 @@ class TestValidate:
 
     def test_missing_state_reported(self, monkeypatch):
         broken = dict(STATE_TO_VRM)
-        del broken["sleep"]
+        del broken["happy"]
         monkeypatch.setattr("animation.vrm_state_map.STATE_TO_VRM", broken)
-        assert validate() == ["sleep"]
+        assert validate() == ["happy"]
 
     def test_missing_new_state_reported(self, monkeypatch):
         """新增状态缺失也能被检测到"""
@@ -152,9 +149,6 @@ class TestExpressionFor:
     @pytest.mark.parametrize("morph", ["sad", "happy"])
     def test_positive_morphs(self, morph):
         assert expression_for(morph) == morph
-
-    def test_sleep_maps_relaxed_like_js(self):
-        assert expression_for("sleep") == "relaxed"
 
     @pytest.mark.parametrize("state", ["idle", "talk", "think", "listen"])
     def test_neutral_states(self, state):

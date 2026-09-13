@@ -1,4 +1,4 @@
-﻿agent\providers\summarizer\llm_sum.py            93      0   100%
+agent\providers\summarizer\llm_sum.py            93      0   100%
 agent\providers\summarizer\template_sum.py      140      0   100%
 agent\seams\__init__.py                           0      0   100%
 agent\seams\embedder.py                          62      0   100%

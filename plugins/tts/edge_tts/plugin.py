@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class EdgeTTS(TTSEngine):
     """Edge TTS实现"""
 
-    def __init__(self, voice: str = "zh-CN-XiaoyiNeural",
+    def __init__(self, voice: str = "zh-CN-xbyaNeural",
                  rate: int = 0, pitch: int = 0):
         """
         初始化Edge TTS

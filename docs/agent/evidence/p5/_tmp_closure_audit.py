@@ -19,7 +19,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(r"E:\程序\桌面宠物\xiaoyi-vrm-worktree")
+ROOT = Path(r"E:\程序\桌面宠物\xbya-vrm-worktree")
 OUT = ROOT / "docs" / "agent" / "evidence" / "p5" / "closure_audit.txt"
 TASKS = ROOT / "docs" / "agent" / "tasks-p5.json"
 

@@ -591,7 +591,7 @@ git commit -m "feat: implement AnimationController with layer compositing"
 ```python
 class PetWindow(QWidget):
     def __init__(self)
-    def set_app(self, app: XiaoyiApp)
+    def set_app(self, app: xbyaApp)
     def show_bubble(self, text: str, duration: int = 3000)
     def set_state(self, state: str)
 ```
@@ -867,18 +867,18 @@ git commit -m "feat: implement PySide6 PetWindow with state machine"
 import sys
 from PySide6.QtWidgets import QApplication
 from ui.pet_window import PetWindow
-from core.app import XiaoyiApp
+from core.app import xbyaApp
 
 def main():
     app = QApplication(sys.argv)
     
     # 初始化后端
-    xiaoyi = XiaoyiApp()
-    xiaoyi.initialize()
+    xbya = xbyaApp()
+    xbya.initialize()
     
     # 创建宠物窗口
     pet_window = PetWindow()
-    pet_window.set_app(xiaoyi)
+    pet_window.set_app(xbya)
     pet_window.load_pet("cat")
     pet_window.show()
     
@@ -1033,7 +1033,7 @@ pyinstaller build.spec
 ## 文件结构（重构后）
 
 ```
-xiaoyi-desktop-pet/
+xbya-desktop-pet/
 ├── run.py                    # 启动入口
 ├── config.yaml               # 配置文件
 ├── requirements.txt          # 依赖

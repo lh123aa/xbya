@@ -9,7 +9,7 @@
 import sys
 from pathlib import Path
 
-ROOT = Path(r"E:\程序\桌面宠物\xiaoyi-vrm-worktree")
+ROOT = Path(r"E:\程序\桌面宠物\xbya-vrm-worktree")
 AGENTS = ROOT / "AGENTS.md"
 HIST = ROOT / "docs" / "agent" / "acceptance-history.md"
 

@@ -41,9 +41,9 @@ def main():
     check_dependencies()
 
     try:
-        from core.app import XiaoyiApp
-        xiaoyi = XiaoyiApp("config.yaml")
-        xiaoyi.run()
+        from core.app import xbyaApp
+        xbya = xbyaApp("config.yaml")
+        xbya.run()
     except Exception as e:
         # pythonw(无控制台)下不能用 input/依赖终端的输出，改用日志
         logger.error(f"启动失败: {e}")

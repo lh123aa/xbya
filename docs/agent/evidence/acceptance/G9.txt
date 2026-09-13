@@ -59,7 +59,7 @@ F4 / F5 真实执行验证
 [PASS] screenshot 已注册
 [PASS] open_app 已注册
 [PASS] clipboard 写入成功  → 0ms
-[PASS] 读回来的内容与写入一致（真·系统剪贴板往返）  → 'xiaoyi-f4f5-1789119471'
+[PASS] 读回来的内容与写入一致（真·系统剪贴板往返）  → 'xbya-f4f5-1789119471'
 [PASS] 原剪贴板内容已恢复  → '欣雅剪贴板测试_9f3a'
 
 [F5-b] screenshot 真实 GDI 抓屏
@@ -72,7 +72,7 @@ F4 / F5 真实执行验证
 [PASS] 验证后已删除截图（不把屏幕留在磁盘上）
 
 [F5-c] open_app 真实启动应用
-  (172ms) success=True summary='已经帮你打开文件「xiaoyi_f4f5_1789119471.txt」啦'
+  (172ms) success=True summary='已经帮你打开文件「xbya_f4f5_1789119471.txt」啦'
 [PASS] open_app 调用成功  → 172ms
 [PASS] 系统真的启动了默认程序（新进程出现）  → PID=[11744, 15960]
 [PASS] 验证后已关闭该进程

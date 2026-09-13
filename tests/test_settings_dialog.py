@@ -96,3 +96,73 @@ def test_hotkey_capture_widget(qapp, cfg, monkeypatch):
     # 模拟控件保存组合键（capture逻辑独立在控件/对话框类中，这里测保存与显示）
     widget.finish_capture("Ctrl+Alt+M")
     assert widget.text().endswith("Ctrl+Alt+M")
+
+
+# ---------- 页签结构：标题改名 + 性能页并入系统信息页 ----------
+
+def test_window_title_is_system_settings(qapp, cfg, monkeypatch):
+    """标题应为「系统设置」，不再是「欣雅设置」"""
+    monkeypatch.setattr("ui.settings_dialog.requests", None)
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(cfg)
+    assert dlg.windowTitle() == "系统设置"
+
+
+def test_performance_tab_removed(qapp, cfg, monkeypatch):
+    """原「⚡ 性能」页必须已被删除，不能只改名留着"""
+    monkeypatch.setattr("ui.settings_dialog.requests", None)
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(cfg)
+    tabs = [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())]
+    assert not any("性能" in t for t in tabs), f"仍有性能页: {tabs}"
+    # 五个页签，顺序固定
+    assert tabs == ["🎤 语音", "🧠 AI 大脑", "🎀 外观", "⌨️ 快捷键", "ℹ️ 系统信息"]
+
+
+def test_info_tab_contains_perf_controls(qapp, cfg, monkeypatch):
+    """性能控件必须**真的在系统信息页里**（不是仅仅还存在）"""
+    monkeypatch.setattr("ui.settings_dialog.requests", None)
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(cfg)
+
+    assert hasattr(dlg, "perf_combo2"), "性能档位控件丢失"
+    assert hasattr(dlg, "_perf_plugin_label"), "插件状态控件丢失"
+
+    # 结构判据：从控件往上走到页签，必须是「系统信息」那一页
+    info_widget = None
+    for i in range(dlg.tabs.count()):
+        if "系统信息" in dlg.tabs.tabText(i):
+            info_widget = dlg.tabs.widget(i)
+    assert info_widget is not None, "找不到系统信息页"
+
+    def ancestors(w):
+        seen = []
+        cur = w
+        while cur is not None:
+            seen.append(cur)
+            cur = cur.parentWidget()
+        return seen
+
+    assert info_widget in ancestors(dlg.perf_combo2), \
+        "性能档位控件不在系统信息页内"
+    assert info_widget in ancestors(dlg._perf_plugin_label), \
+        "插件状态控件不在系统信息页内"
+
+
+def test_apply_still_writes_performance_mode(qapp, cfg, monkeypatch):
+    """控件搬家后，保存链路不能被切断：apply 仍须写入性能档位"""
+    monkeypatch.setattr("ui.settings_dialog.requests", None)
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(cfg)
+    dlg.perf_combo2.setCurrentText("high")
+    assert dlg.apply_to_config() is True
+    assert cfg.get("system.performance_mode") == "high"
+
+
+def test_perf_widgets_load_from_config(qapp, cfg, monkeypatch):
+    """合并后仍要正确回读配置（档位不能总是显示第一项）"""
+    monkeypatch.setattr("ui.settings_dialog.requests", None)
+    cfg.set("system.performance_mode", "medium")
+    from ui.settings_dialog import SettingsDialog
+    dlg = SettingsDialog(cfg)
+    assert dlg.perf_combo2.currentText() == "medium"

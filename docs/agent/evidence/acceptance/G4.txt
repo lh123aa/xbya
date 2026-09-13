@@ -9,7 +9,7 @@
 ======================================================================
 
 装配结果：tools=21 router=HybridRouter enabled=True
-白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xiaoyi_accept_oi7m07yp']
+白名单：['C:\\Users\\49046\\AppData\\Local\\Temp\\xbya_accept_oi7m07yp']
 
 [PASS] 工具集装配  → 21 个工具
 [PASS] Agent 层已启用

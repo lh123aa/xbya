@@ -3,7 +3,7 @@
 
 职责：
 - 所有运行期生成的文件（语音录音wav / ASR增强音频 / TTS音频mp3）统一写入
-  temp.gettempdir()/xiaoyi_pet/，避免散落在系统临时目录
+  temp.gettempdir()/xbya_pet/，避免散落在系统临时目录
 - TmpCleaner 每 10 分钟清理超龄文件（默认 3 分钟以上未修改——防误删正在使用）
 - 只清理文件系统临时产物；**绝不触碰对话上下文等内存状态**
 """
@@ -27,7 +27,7 @@ def get_tmp_dir() -> str:
     """统一的临时工作目录（懒创建，幂等）"""
     global _DIR
     if _DIR is None:
-        _DIR = os.path.join(tempfile.gettempdir(), "xiaoyi_pet")
+        _DIR = os.path.join(tempfile.gettempdir(), "xbya_pet")
     os.makedirs(_DIR, exist_ok=True)
     return _DIR
 

@@ -620,7 +620,7 @@ PetWindow
 ```bash
 # 克隆项目
 git clone <repo-url>
-cd xiaoyi-vrm-worktree
+cd xbya-vrm-worktree
 
 # 安装依赖
 pip install -r requirements.txt
@@ -676,7 +676,7 @@ python tools/measure_acceptance_metrics.py   # 指标测量 → 8/8
 ## 项目结构
 
 ```
-xiaoyi-vrm-worktree/
+xbya-vrm-worktree/
 ├── run.py                          # 程序入口
 ├── config.yaml                     # 全局配置
 ├── requirements.txt                # Python 依赖
@@ -952,5 +952,5 @@ MIT License
 
 ## 联系方式
 
-- 项目主页：https://github.com/your-username/xiaoyi-desktop-pet
-- 问题反馈：https://github.com/your-username/xiaoyi-desktop-pet/issues
+- 项目主页：https://github.com/your-username/xbya-desktop-pet
+- 问题反馈：https://github.com/your-username/xbya-desktop-pet/issues

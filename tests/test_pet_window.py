@@ -100,7 +100,7 @@ class TestPetStateMachine:
 
     def test_all_states_can_reach_idle(self):
         """测试所有非idle状态最终能回到idle（通过多轮转移）"""
-        non_idle = ["wander", "sleep", "happy", "stare", "dance",
+        non_idle = ["happy", "stare", "dance",
                     "talk", "sad", "listen", "think", "angry", "surprise", "love"]
         for state in non_idle:
             sm = PetStateMachine()
@@ -236,8 +236,299 @@ class TestVoiceInteraction:
         assert win.state_machine.current_state == "love"
 
 
+class TestStuckInterruptFlag:
+    """回归：打断标志必须在新一次语音处理时清除。
+
+    实测故障：`app._interrupt_requested` 由"点击宠物/按 Ctrl+Alt+D"置 True，
+    而当时唯一的清除点位于 `_speak_sentences` 的播放循环内部。若置位时**没有**
+    正在播放，标志就永远停在 True —— 之后每段语音都在 ASR 之后撞上
+    "ASR后检测到打断，跳过后续处理" 被丢弃。
+
+    用户看到的现象：麦克风有触发、ASR 有结果、但**永远没有任何互动**。
+    """
+
+    def _make_win(self, qapp):
+        from ui.pet_window import PetWindow
+        return PetWindow()
+
+    def test_pipeline_clears_stale_interrupt_flag(self, qapp, monkeypatch):
+        """带着"陈旧的打断标志"进管线，标志应被清掉且继续往下走"""
+        win = self._make_win(qapp)
+
+        class FakeApp:
+            def __init__(self):
+                self._interrupt_requested = True   # ← 陈旧的打断标志
+                self.transcribed = False
+                self.chatted = False
+
+            def transcribe(self, path):
+                self.transcribed = True
+                return "你好呀"
+
+            def chat_stream(self, text, context=None):
+                self.chatted = True
+                return []
+
+            def synthesize(self, s):
+                return None
+
+        app = FakeApp()
+        win.app = app
+        # FakeApp 没有 agent_stack → `_agent_enabled` 属性自动为 False，
+        # 走纯 LLM 分支，避开 Agent 事件（该属性只读，不能赋值）
+
+        win._voice_pipeline("dummy.wav")
+
+        assert app.transcribed is True, "ASR 应该被执行"
+        assert app._interrupt_requested is False, \
+            "新一次语音处理必须先清除陈旧的打断标志"
+        assert app.chatted is True, \
+            "陈旧标志不该阻断后续链路（这正是'永远没互动'的根因）"
+
+    def test_interrupt_during_asr_still_honored(self, qapp, monkeypatch):
+        """反方向：ASR **期间**新产生的打断仍必须生效（不能一清了之）"""
+        win = self._make_win(qapp)
+
+        class FakeApp:
+            def __init__(self):
+                self._interrupt_requested = False
+                self.chatted = False
+
+            def transcribe(self, path):
+                # 模拟"识别过程中用户按了打断"
+                self._interrupt_requested = True
+                return "你好呀"
+
+            def chat_stream(self, text, context=None):
+                self.chatted = True
+                return []
+
+        app = FakeApp()
+        win.app = app
+        # 同上：无 agent_stack，自动走纯 LLM 分支
+
+        win._voice_pipeline("dummy.wav")
+
+        assert app.chatted is False, \
+            "识别期间产生的打断必须仍然阻断 LLM（这条保护不能被上面那条破坏）"
+
+
+class TestEchoGuardTiming:
+    """回归：回声屏蔽必须在**播放真正结束之后**才计时。
+
+    实测故障：`_on_agent_result` 里把播报丢进后台线程后**立刻**设
+    `_echo_cooldown_until`。而播报是异步的 —— 她念完 5~8 秒时冷却早过期了，
+    于是**她自己的 TTS 被麦克风收回去当作用户的下一句**，表现为
+    "自言自语"、并且把用户真正的语音挤掉。
+
+    修法：把"设冷却"放进播放线程的 finally（`_arm_echo_guard`），
+    并让**所有**播报路径都走它（ack / result / refine / confirm / llm）。
+    """
+
+    def test_guard_armed_after_playback_not_before(self, qapp, monkeypatch):
+        """冷却必须在 _speak_sentences **返回之后**才被设置"""
+        from ui.pet_window import PetWindow
+        win = PetWindow()
+
+        order = []
+
+        def fake_speak(sentences):
+            order.append("speak_start")
+            import time as _t
+            _t.sleep(0.15)            # 模拟播放耗时
+            order.append("speak_end")
+
+        monkeypatch.setattr(win, "_speak_sentences", fake_speak)
+        win.app = None                 # 无 config_manager → 用默认冷却
+        win._echo_tail_until = 0.0
+        win._echo_cooldown_until = 0.0
+
+        win._on_agent_result({"summary": "你好呀", "emotion": "happy"})
+
+        # 等后台播放线程跑完
+        import time as _t
+        for _ in range(50):
+            if "speak_end" in order:
+                break
+            _t.sleep(0.02)
+
+        assert order[:2] == ["speak_start", "speak_end"], f"播放未完成: {order}"
+        assert win._echo_tail_until > 0, "播放结束后必须挂上残响屏蔽"
+        # 暂停机制已挡住播报期间的回声，冷却期只需覆盖残响（约 2 秒）
+        assert win._echo_cooldown_until >= win._echo_tail_until, \
+            "冷却应 ≥ 残响窗口"
+
+    def test_all_playback_paths_arm_guard(self):
+        """结构判据：所有播报路径都必须调用 _arm_echo_guard
+
+        这条防的是"新加一条播报路径但忘了挂回声屏蔽" —— 实测已经漏过两次
+        （`_on_agent_ack` 与 `_on_agent_refine`）。
+        """
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow)
+        # 每个"启动播报线程"的路径，都应出现 _arm_echo_guard
+        for path_name in ("_on_agent_ack", "_on_agent_result",
+                          "_on_agent_refine", "_on_agent_confirm"):
+            fn = getattr(mod.PetWindow, path_name)
+            body = inspect.getsource(fn)
+            assert "_arm_echo_guard" in body, \
+                f"{path_name} 播报后没有挂回声屏蔽（会导致她把自言自语当成用户说话）"
+
+
 class TestVoiceMonitor:
     """常驻监听集成测试（不启动真实麦克风：注入FakeMic）"""
+
+    def test_speak_sentences_must_resume_mic(self):
+        """结构判据：_speak_sentences 的 finally 必须恢复麦克风
+
+        这条防的是"暂停了麦克风但提前 return / 异常时漏掉 resume"——
+        实测已经踩过（用户感知"完全没反应"）。
+        """
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow._speak_sentences)
+        # 必须在 finally 块中调用 resume_listening
+        assert "finally:" in src, "_speak_sentences 没有 finally 兜底"
+        assert "resume_listening" in src, "_speak_sentences 没有恢复麦克风"
+
+    def test_speak_generation_guard_exists(self):
+        """结构判据：恢复麦克风前必须校验播报代数
+
+        根因（实测）：一次交互触发 ack→result→refine 三次播报，
+        每次都在 finally 起一个 1.5s 延迟恢复线程。没有代数守卫时，
+        先起的线程会在后续播报**还在说话时**打开麦克风 →
+        拾到 TTS 回声 → 假录音 + 冷却 → 用户真实说话被挡掉。
+        """
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow._speak_sentences)
+        assert "_speak_generation" in src, \
+            "_speak_sentences 缺少播报代数守卫（会导致提前恢复麦克风拾到回声）"
+        assert "_my_generation" in src, "缺少本次代数快照"
+
+    def test_mic_resume_clears_cooldown(self):
+        """恢复监听必须清掉触发冷却
+
+        否则"播报期间已彻底暂停"之后仍留着冷却窗口，
+        用户在这段时间说话会被静默忽略（感知："她听不见我说话了"）。
+        """
+        import time as _t
+        from services.microphone_service import MicrophoneService
+
+        mic = MicrophoneService()
+        mic._cooldown_until = _t.time() + 60.0   # 假装还有很长的冷却
+        mic.pause_listening()
+        mic.resume_listening()
+        assert mic._cooldown_until == 0.0, \
+            "resume_listening 必须清掉触发冷却，否则用户说话会被忽略"
+
+
+class TestProcessingWatchdog:
+    """处理态看门狗：ASR/LLM/TTS 任一阶段卡死时不能永久锁死。
+
+    为什么必须有：`_processing=True` 期间所有新语音只入队不处理。
+    若某个阶段挂死（ASR 推理线程卡住、网络请求不返回），
+    标志会永久为 True → 用户感知是"她彻底不理我了"，
+    而日志上只看到语音在正常入队 —— 典型的静默失败。
+    """
+
+    def test_watchdog_not_triggered_when_idle(self, pet_window):
+        """空闲时看门狗不应做任何事"""
+        pet_window._processing = False
+        pet_window._processing_since = 0.0
+        assert pet_window._recover_stuck_processing() is False
+
+    def test_watchdog_not_triggered_within_limit(self, pet_window):
+        """未超时不应解锁（否则正常的长任务会被误杀）"""
+        import time as _t
+        pet_window._processing = True
+        pet_window._processing_since = _t.time() - 5.0     # 才 5 秒
+        assert pet_window._recover_stuck_processing() is False
+        assert pet_window._processing is True, "未超时不该解锁"
+
+    def test_watchdog_unlocks_after_timeout(self, pet_window):
+        """★ 核心：超过上限必须强制解锁，否则永久失聪"""
+        import time as _t
+        pet_window._processing = True
+        pet_window._processing_since = (
+            _t.time() - (pet_window._processing_watchdog_sec + 1))
+        assert pet_window._recover_stuck_processing() is True
+        assert pet_window._processing is False, "超时后必须解锁"
+        assert pet_window._processing_since == 0.0, "解锁后应归零起点"
+
+    def test_watchdog_also_clears_agent_busy(self, pet_window):
+        """看门狗要同时解开 _agent_busy（两道闸可能一起卡住）"""
+        import time as _t
+        pet_window._processing = True
+        pet_window._agent_busy = True
+        pet_window._agent_busy_since = _t.time() - 999
+        pet_window._processing_since = (
+            _t.time() - (pet_window._processing_watchdog_sec + 1))
+        assert pet_window._recover_stuck_processing() is True
+        assert pet_window._agent_busy is False, "_agent_busy 也必须被解开"
+
+    def test_start_pipeline_records_timestamp(self):
+        """_start_pipeline 必须记录看门狗起点（否则看门狗永远不触发）"""
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow._start_pipeline)
+        assert "_processing_since" in src, \
+            "_start_pipeline 没有记录看门狗起点 → 卡死后永远不会解锁"
+
+    def test_tick_calls_watchdog(self):
+        """结构判据：tick 里必须真的调用看门狗（写了不调用等于没有）"""
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow)
+        assert "self._recover_stuck_processing()" in src, \
+            "看门狗方法存在但从未被调用"
+
+
+class TestImmediateListenFeedback:
+    """语音起始的即时反馈：解决"ASR 慢导致的看起来没反应"。
+
+    ASR 在本机 8 核 CPU 上要 3~5 秒。这期间若界面毫无变化，
+    用户会把"慢"感知成"没听见"。做法是在**检测到声音的瞬间**
+    就切 listen 动效 + 弹气泡，把"有没有反应"与"反应内容"解耦。
+    """
+
+    def test_listening_feedback_method_exists(self):
+        from ui.pet_window import PetWindow
+        assert hasattr(PetWindow, "_show_listening_feedback"), \
+            "缺少语音起始的即时反馈方法"
+
+    def test_voice_start_triggers_feedback(self):
+        """on_start 回调里必须调用即时反馈"""
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow.start_voice_monitor)
+        assert "_show_listening_feedback" in src, \
+            "检测到语音起始时没有给即时反馈（用户会以为没听见）"
+
+    def test_feedback_debounced(self, pet_window):
+        """连续语音不应反复刷新气泡（防抖）"""
+        calls = []
+        pet_window.show_bubble = lambda *a, **k: calls.append(a)
+        # 连续调用两次：第二次应被防抖挡住
+        pet_window._show_listening_feedback()
+        pet_window._show_listening_feedback()
+        assert len(calls) == 1, f"防抖失效，弹了 {len(calls)} 次气泡"
+
+    def test_feedback_suppressed_while_speaking(self):
+        """播报期间的气泡属于宠物自己说的话，不能被提示顶掉"""
+        import inspect
+        from ui import pet_window as mod
+
+        src = inspect.getsource(mod.PetWindow.start_voice_monitor)
+        assert "self._speaking" in src, \
+            "即时反馈没有避开播报期（会顶掉宠物自己的字幕）"
 
     def test_start_voice_monitor_starts_listening(self, qapp, monkeypatch):
         from ui.pet_window import PetWindow
@@ -344,9 +635,7 @@ class TestVoiceMonitor:
         start_x = geo.left() + max(60, (geo.width() - win.width()) // 2)
         start_y = geo.top() + max(60, (geo.height() - win.height()) // 2)
         win.move(start_x, start_y)
-        assert win._is_edge_snapped() is False, "测试前置条件：窗口不应处于贴边状态"
-
-        dpr = win.devicePixelRatioF()
+        win._is_snapped_state = False  # 确保不在贴边状态
 
         press = QMouseEvent(
             QEvent.Type.MouseButtonPress,
@@ -355,8 +644,9 @@ class TestVoiceMonitor:
         )
         win.mousePressEvent(press)
         assert win.dragging is True
-        # drag_offset 记录的是按下时的全局鼠标位置（move 时用 global - offset 推新窗口位置）
-        assert win.drag_offset == QPoint(int(100 * dpr), int(100 * dpr))
+        # 新拖拽模型：记录鼠标全局位置 + 窗口原始位置
+        assert win._drag_mouse_start == QPoint(100, 100)
+        assert win._drag_win_start == QPoint(start_x, start_y)
 
         move = QMouseEvent(
             QEvent.Type.MouseMove,
@@ -364,8 +654,9 @@ class TestVoiceMonitor:
             Qt.NoButton, Qt.LeftButton, Qt.NoModifier,
         )
         win.mouseMoveEvent(move)
-        expected_x = int(150 * dpr) - win.drag_offset.x()
-        expected_y = int(120 * dpr) - win.drag_offset.y()
+        # 新模型：窗口位置 = 窗口原始位置 + (当前鼠标全局 - 按下时鼠标全局)
+        expected_x = start_x + (150 - 100)
+        expected_y = start_y + (120 - 100)
         assert win.pos() == QPoint(expected_x, expected_y), "拖拽中窗口位置应跟随全局位置"
         assert win.dragging is True, "move事件不应结束拖拽"
 
@@ -380,9 +671,8 @@ class TestVoiceMonitor:
     def test_click_when_edge_snapped_unsnaps_instead_of_dragging(self, pet_window):
         """贴边状态下按下应先弹出，而不是进入拖拽"""
         win = pet_window
-        geo = win._get_screen_geometry()
-        win.move(geo.left(), geo.top())
-        assert win._is_edge_snapped() is True
+        # 直接设置贴边标志（不再依赖位置判断）
+        win._is_snapped_state = True
 
         press = QMouseEvent(
             QEvent.Type.MouseButtonPress,
@@ -391,6 +681,7 @@ class TestVoiceMonitor:
         )
         win.mousePressEvent(press)
         assert win.dragging is False, "贴边点击应走弹出分支，不进入拖拽"
+        assert win._is_snapped_state is False, "unsnap 应重置贴边标志"
 
 
 class TestSettingsIntegration:
@@ -494,6 +785,85 @@ class TestSettingsIntegration:
         assert calls == ["unreg", "Ctrl+Alt+P"], f"热键重注册序列错误: {calls}"
         # voice.listening=false 时监听应关闭且标志同步
         assert win._monitor_enabled is False
+
+    def test_apply_settings_keeps_sprite_aspect_for_tall_canvas(self, qapp, tmp_path):
+        """非方形画布下保存设置，窗口必须保住精灵宽高比（不能压成正方形）。
+
+        回归的是一个写死的 `setFixedSize(size + 100, size + 100)`：
+        全身立绘画布 128×288，被塞进 227×227 的窗口后 ——
+          · 角色从 y=0 画起，**脚被窗口底裁掉**
+          · 44px 字幕条落在 y[186..221]，**重新压回角色身上**
+        （正是 `_relayout_pet` 修掉的那个现象，从"保存设置"这条路径复发）
+
+        判据用结构不变量而不是像素：画布必须**整体**落在字幕区之上。
+        """
+        import yaml
+        from core.config_manager import ConfigManager
+        from ui.pet_window import PetWindow, SUBTITLE_AREA
+
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(yaml.safe_dump({
+            "voice": {"listening": False, "hotkey_enabled": False},
+            "system": {"autostart": False},
+            "ui": {"always_on_top": True, "pet_size": 127},
+        }))
+        cm = ConfigManager(str(cfg_path))
+
+        class FakeApp:
+            config_manager = cm
+            hotkey_manager = None
+
+        win = PetWindow()
+        win.app = FakeApp()
+        win.load_pet("xbya")                         # 真实资源：画布 128×288
+        cw, ch = win.anim_controller.get_size()
+        assert (cw, ch) == (128, 288), f"xbya 画布应为 128×288，实为 {cw}×{ch}"
+
+        win._pet_size = 300                          # 造出"尺寸变了"的差异
+        win.apply_settings()
+
+        assert win.width() == 127 + 100, f"窗口宽应随 pet_size，实为 {win.width()}"
+        expected_h = max(1, int(round(127 * ch / cw))) + 100
+        assert win.height() == expected_h, (
+            f"窗口高必须按精灵宽高比 {ch}/{cw} 算（应 {expected_h}），"
+            f"实为 {win.height()} —— 写死正方形会把脚裁掉")
+
+        # 结构不变量：画布整体在字幕区之上
+        assert win.pet_y + ch <= win.height() - SUBTITLE_AREA, (
+            f"画布底 {win.pet_y + ch} 越过了字幕区上沿 "
+            f"{win.height() - SUBTITLE_AREA}：字幕会压住角色")
+
+    def test_apply_settings_square_sprite_unchanged(self, qapp, tmp_path):
+        """方形画布（旧角色）行为不变 —— 宽高都等于 pet_size + 100。
+
+        这条是给上面那条改动加的反方向保护：按比例算高之后，
+        128×128 的 cat 仍必须得到 227×227，不能多出 1px。
+        """
+        import yaml
+        from core.config_manager import ConfigManager
+        from ui.pet_window import PetWindow
+
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(yaml.safe_dump({
+            "voice": {"listening": False, "hotkey_enabled": False},
+            "system": {"autostart": False},
+            "ui": {"always_on_top": True, "pet_size": 127},
+        }))
+        cm = ConfigManager(str(cfg_path))
+
+        class FakeApp:
+            config_manager = cm
+            hotkey_manager = None
+
+        win = PetWindow()
+        win.app = FakeApp()
+        win.load_pet("cat")                          # 真实资源：画布 128×128
+        assert win.anim_controller.get_size() == (128, 128)
+
+        win._pet_size = 300
+        win.apply_settings()
+        assert (win.width(), win.height()) == (227, 227), (
+            f"方形画布应仍是 227×227，实为 {win.width()}×{win.height()}")
 
 
 if __name__ == "__main__":

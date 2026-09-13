@@ -36,7 +36,7 @@
 （下方为 python tools/check_repo_hygiene.py 的完整原始输出）
 
 生成时间：2026-09-11 09:43:42
-命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xiaoyi-vrm-worktree）
+命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xbya-vrm-worktree）
 
 ========================================================================
 仓库卫生自检（P4-A1 / G13）
@@ -72,7 +72,7 @@
 [exit] 1
 
 生成时间：2026-09-11 09:55:44
-命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xiaoyi-vrm-worktree）
+命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xbya-vrm-worktree）
 
 ========================================================================
 仓库卫生自检（P4-A1 / G13）
@@ -108,7 +108,7 @@
 [exit] 1
 
 生成时间：2026-09-11 09:55:45
-命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xiaoyi-vrm-worktree）
+命令：python tools/check_repo_hygiene.py（cwd=E:\程序\桌面宠物\xbya-vrm-worktree）
 
 ========================================================================
 仓库卫生自检（P4-A1 / G13）

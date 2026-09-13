@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(r"E:\程序\桌面宠物\xiaoyi-vrm-worktree")
+ROOT = Path(r"E:\程序\桌面宠物\xbya-vrm-worktree")
 AGENTS = ROOT / "AGENTS.md"
 EVID = ROOT / "docs" / "agent" / "evidence" / "p5" / "g2_g3_tests_coverage.txt"
 

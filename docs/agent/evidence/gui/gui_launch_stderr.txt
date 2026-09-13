@@ -97,7 +97,7 @@ C:\Python312\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is dep
 19:05:58 [INFO] ui.pet_window: [agent] PetWindow 已订阅 Agent 事件
 19:05:58 [INFO] animation.clip: 加载动画: resources/sprites\cat\idle, 36帧
 19:05:58 [INFO] animation.controller: 加载宠物: cat, 10个动画
-19:05:59 [INFO] ui.pet_window: [vrm] 已启用 VRM 渲染: assets/vrm/AvatarSample_A.vrm (viewer=E:\程序\桌面宠物\xiaoyi-vrm-worktree\assets\vrm\viewer.html)
+19:05:59 [INFO] ui.pet_window: [vrm] 已启用 VRM 渲染: assets/vrm/AvatarSample_A.vrm (viewer=E:\程序\桌面宠物\xbya-vrm-worktree\assets\vrm\viewer.html)
 19:05:59 [INFO] core.app: VRM渲染: 已启用
 19:05:59 [INFO] services.microphone_service: PyAudio可用
 19:05:59 [INFO] services.microphone_service: 麦克风服务初始化

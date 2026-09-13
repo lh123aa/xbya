@@ -468,7 +468,7 @@ def create_chibi_vrm(output_path):
     # 注意：json.scene 是 scenes 数组的下标（0），不是 node 的索引！
     # 否则 gltf.scene 会因 scenes 越界而变成 undefined，导致加载崩溃。
     gltf = {
-        "asset":{"version":"2.0","generator":"XiaoYiPet Chibi Girl Generator"},
+        "asset":{"version":"2.0","generator":"xbyaPet Chibi Girl Generator"},
         "scene":0,"scenes":[{"name":"scene","nodes":[root_idx]}],
         "nodes":nodes,"meshes":meshes,"accessors":accessors,
         "bufferViews":bviews,"buffers":[{"byteLength":len(buf)}],
@@ -476,7 +476,7 @@ def create_chibi_vrm(output_path):
         "extensions":{
             "VRMC_vrm":{
                 "specVersion":"1.0",
-                "meta":{"version":"1.0.0","name":"小忆Chibi","title":"Chibi Girl","author":"XiaoYiPet",
+                "meta":{"version":"1.0.0","name":"小忆Chibi","title":"Chibi Girl","author":"xbyaPet",
                          "contactInformation":"","licenseName":"MIT",
                          "licenseUrl":"https://vrm.dev/licenses/1.0/",
                          "allowedUserName":"everyone",

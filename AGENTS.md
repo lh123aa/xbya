@@ -54,7 +54,7 @@
 ## 三、仓库结构
 
 ```
-xiaoyi-vrm-worktree/
+xbya-vrm-worktree/
 │
 ├── core/kernel/                     ← 🆕 插件内核（DSH Cordis 的 Python 简体版）
 │   ├── __init__.py
@@ -310,6 +310,10 @@ class RuleRouter(RouterService):
 | **D21** | **`ConfigManager.set()` 会把「整份内存配置」落盘，含合并进来的默认值与任何程序化改动** | `config_manager.py:204` 的 `set()` 末尾无条件 `self._save_config()`，而 `_save_config()` 是 `yaml.dump(self.config)` **整份写**。于是：① 任何**内存里被改过**的值都会在下一次 `set()` 被顺手持久化；② `_merge_config()` 补进来的默认键也被写进文件；③ **注释全被 `yaml.dump` 吃掉**（本项目 `config.yaml` 的注释是给人看的重要信息）。触发点现成就有：`core/app.py:147` 启动时必调 `set("system.perf_evaluated", True)` | 我在改 `tests/test_app.py` 时**实测踩中**：测试为钉住 `ui.pet_sprite` 而直接改了内存字典，随后 `app.run()` 里那句 `set(...)` 把测试值 **`unit_pet` 写进了真实 `config.yaml`**，并且整个文件被重排、注释丢失。这与 P5-C1 轮次那次「配置被打坏」同族（都是"配置被静默回写"），但机理不同：那次是**写坏了 YAML 语法**导致回退默认值，这次是**语法合法但内容被污染** —— 更隐蔽，因为程序照常能跑，只有盯着文件才看得出 | 🟡 **本轮已做两件事，根因未修（登记见下）**：① **测试侧堵住**：`test_run_injects_app_and_loads_pet` 改为用 `monkeypatch.setattr(ConfigManager, "get", ...)` 拦读，不碰内存字典；并加了「改完比对 MD5，确认 `config.yaml` 未被改动」的现场核对（**实测通过**）。② **`config.yaml` 已恢复**（219 行，6 个顶层键、密钥长度、`path_whitelist`、`agent.plugins` 13 项逐条核对）。**根因未修的理由**：把 `set()` 改成"只改内存、显式 `save()` 才落盘"是**行为变更**，而 `set()` 的现有调用点（`ui/pet_window.py` 四处菜单开关、`core/app.py` 一处）目前都**依赖"改完即持久化"**才在重启后保留 —— 直接改会让这些开关变得重启即失效。正确的做法是**先给调用点补上显式 `save()`**，再收窄 `set()`；那是独立一轮的改动面，不塞进本轮。判据：改完后「切换字幕开关 → 重启 → 仍生效」且「测试跑完 `config.yaml` 的 MD5 不变」两条同时成立。另外 `.gitignore` 已补 `config.yaml.before_*` / `config.yaml.manual_backup`（**这些备份含明文密钥**，而 G13 的密钥扫描只管已跟踪内容，拦不住"即将被 `git add -A` 加进去"的文件） |
 | **D22** | **`ui.render_mode` 这个配置项从未被读取** | `PetWindow.render_mode` 在 `ui/pet_window.py:124` **硬编码为 `"sprite"`**，全仓再无一处读 `ui.render_mode`；而 `core/app.py` 启动时**无条件**调 `enable_vrm()`。于是配置里写 `vrm` 只是"碰巧因为无条件调用而生效"，写 `sprite` 也**关不掉** VRM —— 配置与行为不一致 | 用户把 `ui.render_mode` 设成 `sprite` 却仍然显示 3D 模型时，**没有任何报错**，只能靠读代码发现；反过来想"只换精灵图不换渲染模式"也无从表达。属本项目反复出现的同一族：**配置项看起来存在、实际不接线** | ✅ **已修（本轮）**：`core/app.py` 改为按 `ui.render_mode` 决定是否 `enable_vrm()`，非 `vrm` 时打印「渲染模式: sprite（配置 ui.render_mode=…）」；`core/config_manager.DEFAULT_CONFIG` 补上 `ui.render_mode`（默认 `sprite`，与硬编码原值一致）与 `ui.pet_sprite`（默认 `cat`）。**真机验证**：`tools/verify_gui_launch.py` **16/16**，日志实测输出 `精灵图角色: xinya` / `渲染模式: sprite（配置 ui.render_mode=sprite）` / `加载宠物: xinya, 10个动画` |
 | **D23** | **宠物角色名写死在 `core/app.py`：`pet_window.load_pet("cat")`** | 与 D22 同族，同一行代码的另一个后果 | 换角色必须改代码、重跑测试；而 `tests/test_app.py:81` 又把这个字符串**断言死了**（`win.loaded == "cat"`），于是"换角色"这件事在测试层面被永久锁住 —— 本轮把配置改成 `xinya` 时，这条用例立刻变红（**它红得对，是断言本身在拦**） | ✅ **已修（本轮）**：`core/app.py` 改读 `ui.pet_sprite`；`tests/test_app.py` 那条断言由"写死 `cat`"改为"钉一个测试值再断言读到它"，从**硬编码耦合**变成**验证读配置**（顺带避开 D21 的落盘陷阱）。现场核对：`config.yaml` 在测试前后 **MD5 不变** |
+
+| **D24** | **`apply_settings` 把窗口写死成正方形：`setFixedSize(size+100, size+100)`** | `ui/pet_window.py` 里 `load_pet` 是**按精灵画布**算窗口（`size[0]+100, size[1]+100`），而保存设置走的另一条路径却把两个方向都写死成 `pet_size+100`。方形画布（cat / 半身像 128×128）下两条路径碰巧一致，所以一直没暴露；换成**非方形画布**（全身立绘 128×289）立刻分裂 | 触发场景是"打开设置→保存"：窗口被改成 227×227，而画布高 289 ⇒ ① 角色从 y=0 画起，**脚被窗口底裁掉**；② 44px 字幕条落在 y[186..221]，**重新压回角色身上** —— 正是 `_relayout_pet` 修掉的那个现象，从另一条路径原样复发。属本项目反复出现的那一族：**同一件事有两个算法，只有一个被改** | ✅ **已修（本轮）**：改为按**精灵自身宽高比**算高（`ui.pet_size` 调的是画布宽，高跟比例走），方形画布结果不变（仍是 227×227）。`tests/test_pet_window.py` 新增 2 条：`test_apply_settings_keeps_sprite_aspect_for_tall_canvas`（判据用结构不变量「画布整体在字幕区之上」，不看像素）+ `test_apply_settings_square_sprite_unchanged`（反方向保护：cat 必须还是 227×227）。**反方向验证过**：把 `setFixedSize(size+100, size+100)` 塞回去 → 新用例变红并报出 `assert 227 == 387`，方形那条仍绿（说明红的是对的那条） |
+| **D25** | **桌宠立绘的来源只存在于 `.dsh/attachments/` 会话缓存里** | `_tmp_make_frames2.py` 的 profile 直接把 `src` 写成附件缓存路径。那是**会话级**目录：会话一清，`xinya` / `xinya2` 两个 profile 都再也跑不起来 —— 而仓库里存着它们的**产物**（`resources/sprites/xinya*/`），下一个想改角色的人只能对着一堆帧文件猜当初是怎么生成的 | "能跑，但只在那台机器那天" | ✅ **已修（本轮）**：立绘在仓库内留副本 `resources/source/avatar_source.webp`，`tools/make_pet_sprites.py` **仓库内副本优先、附件路径兜底**。现场核对：用仓库内副本 `--rebuild-base` 重建底图后重新生成，**208/208 帧与磁盘上逐字节相同** —— 既证明来源等价，也证明整条链是确定的 |
+| **D26** | **麦克风"自动挑选"在多声源环境下选错设备，且用户无从纠正** | `MicrophoneService._pick_mic_index` 排除回环类设备后**取第一个**，并把结果写进 INFO 日志就结束了。多声源是**常态**而非例外：本机实测有 **14 个输入设备**（本机 Realtek、UU远程虚拟麦克风×3、声音映射器、立体声混音、扬声器回环…）。远程桌面场景下"第一个真实麦克风"恰是**收不到用户声音的那个**，而正确设备（远程虚拟麦克风）排在其后 | 用户感知是"**她听不见我说话**"，但**所有日志都显示正常**：麦克风有触发、ASR 有输出、Agent 有回复、TTS 有播放。真相是录进来的是**平坦底噪**（包络动态范围 1.4x，语音应 >6x），Whisper 只能拿 `initial_prompt` 里的词硬编 —— 于是"取消 确认""字幕by索兰娅"这类**幻觉文本**被当成用户指令送进管线。**最危险的不是听不见，是听见了错的东西**：一个假"取消"会让 Agent 真的去取消任务 | ✅ **已修（本轮）**：① `list_input_devices()` 枚举并区分 `mic`/`loopback`（回环收到的是系统播放声，不是人声）；② `find_device_by_name()` 按名字片段匹配，**同名时优先非回环**；③ `probe_device_levels()` 逐设备短采样测音量（串行 —— 并行开多个 PyAudio 流会触发 **0xC0000005 访问违例**，已实测踩到）；④ 新增 `voice.mic_device` 配置（null=自动 / 数字=索引 / 字符串=名字片段），`_pick_mic_index` 三级优先级；⑤ 新增 `tools/list_mic_devices.py`（`--probe` 试听找出有声音的设备 / `--set` 写回配置）；⑥ 新增热键 `Ctrl+Alt+N` 运行时轮换设备，**切换即重启监听，无需重启应用**；⑦ 每次 `start_voice_monitor` 都重读配置，用户改完配置不必重启进程。**守护用例**：`tests/test_microphone_listen.py` 新增 11 项（含"自动挑选必须跳过回环""名字匹配优先非回环""无效配置回退自动挑选且不崩"），全套 17 passed。**反方向验证过**：假设备表刻意把回环排在索引 0，自动挑选若退化为"取第一个"会立刻选中它 → 用例变红 |
 
 **债务管理原则：**
 - 每项债务必须登记，不允许"隐性债务"
@@ -603,7 +607,7 @@ agent:
 | 验收关卡（内部） | G1~G7 + G13 = **7 关** | **7 / 7** | 每关都有原始输出 |
 | 验收关卡（外部依赖） | G8~G12 = **6 关** | **6 / 6 退出码 0** | ⚠️ G8 依赖免费配额，**有跳过项时按设计不算通过**，报告里单独标出 |
 | P5 登记项 | **18 项** | 见下表 | 闭环判据不是"做完"，而是"每项都有终态" |
-| 测试用例 | 全量 `pytest tests` | **2777 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败" |
+| 测试用例 | 全量 `pytest tests` | **2779 passed / 1 skipped / 0 failed** | skipped 的那 1 项是环境相关，不是"忽略失败"。2777 → 2779 = D24 新增的 2 条 |
 
 **P5 登记项逐条终态**（四种终态，没有第五种；机器可读的账本在 `tasks-p5.json`）：
 
@@ -628,6 +632,9 @@ agent:
 > | **D20 验收脚本把配额报成产品失败** | ✅ **已修**（P5-C1 轮次发现的） |
 > | **D21 `ConfigManager.set()` 整份落盘** | 🟡 **待人工/下轮**（测试侧已堵，根因需连同调用点一起改） |
 > | **D22 `ui.render_mode` 从未被读取** / **D23 角色名写死** | ✅ **已修**（本轮接线 + 真机 16/16） |
+> | **D24 `apply_settings` 写死正方形窗口** | ✅ **已修（换全身立绘那一轮）**：非方形画布下"保存设置"会把脚裁掉并让字幕压回角色；2 条新用例 + 反方向验证 |
+> | **D25 立绘来源只在会话缓存里** | ✅ **已修**：仓库内留副本 + 工具优先读它；`--rebuild-base` 后 208/208 帧逐字节相同 |
+> | **D26 麦克风多声源选错设备** | ✅ **已修**：设备枚举/名字匹配/试听工具/`voice.mic_device` 配置/热键轮换；11 条新用例；本机 14 个输入设备实测 |
 >
 > ⚠️ D19 / D20 都是**本轮执行中查出来的**，不在最初 18 项里 ——
 > D21~D23 又是**再下一轮**查出来的（改角色那一轮）。

@@ -181,7 +181,7 @@ def verify_f4(reg, open_browser: bool) -> None:
     # ── F4-e 不存在的域名要有可读失败 ──
     print("\n[F4-e] 解析不了的域名")
     res, ms, err = call(read, {"url": "https://this-host-does-not-exist-"
-                                      "xiaoyi-test.invalid/"})
+                                      "xbya-test.invalid/"})
     if err or res is None:
         check(False, "坏域名未抛异常", err)
     else:
@@ -222,7 +222,7 @@ def verify_f5(reg, guard) -> None:
         backup = str((backup_res.data or {}).get("text", "")
                      if isinstance(backup_res.data, dict) else "")
 
-    marker = f"xiaoyi-f4f5-{int(time.time())}"
+    marker = f"xbya-f4f5-{int(time.time())}"
     try:
         res, ms, err = call(clip, {"action": "set", "text": marker})
         check(err == "" and res is not None and res.success,
@@ -287,10 +287,10 @@ def verify_f5(reg, guard) -> None:
     # ── F5-c open_app 真启动 ──
     print("\n[F5-c] open_app 真实启动应用")
     roots = guard.whitelist_roots()
-    tmp = Path(roots[0]) / f"xiaoyi_f4f5_{int(time.time())}.txt"
+    tmp = Path(roots[0]) / f"xbya_f4f5_{int(time.time())}.txt"
     before = set(_notepad_pids())
     try:
-        tmp.write_text("xiaoyi f4f5 open_app verification\n", encoding="utf-8")
+        tmp.write_text("xbya f4f5 open_app verification\n", encoding="utf-8")
         res, ms, err = call(opener, {"target": str(tmp)})
         if err or res is None:
             check(False, "open_app 未抛异常", err)
@@ -361,9 +361,9 @@ def main() -> int:
     print(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 72)
 
-    from core.app import XiaoyiApp
+    from core.app import xbyaApp
 
-    app = XiaoyiApp()
+    app = xbyaApp()
     if not app.initialize():
         print(f"{FAIL} 应用初始化失败，无法验证")
         return 1

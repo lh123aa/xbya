@@ -67,7 +67,7 @@ print("| 模型 | 总高 | Y 范围 | head 骨骼 Y | 眼睛/脸 大致 Y |")
 print("|------|------|--------|------------|---------------|")
 
 info = {}
-for name in ("cat.vrm", "AvatarSample_A.vrm", "xiaoyi_from_photo.vrm", "chibi_handmade.vrm"):
+for name in ("cat.vrm", "AvatarSample_A.vrm", "xbya_from_photo.vrm", "chibi_handmade.vrm"):
     p = VRM / name
     if not p.is_file():
         continue
@@ -161,5 +161,5 @@ print("  · 若头部相对偏下（Q版头大），targetY 偏低 ⇒ 只看到
 print()
 print("正确做法：**不要拿总高推**，而是拿 **head 骨骼的实际位置**当锚点。")
 print("VRM 有 humanoid 映射，`head` 骨骼就是权威锚点 —— 这也解释了为什么")
-print("`xiaoyi_from_photo.vrm` 特别糟：它**没有 VRM 扩展**（日志 `Unknown extension")
+print("`xbya_from_photo.vrm` 特别糟：它**没有 VRM 扩展**（日志 `Unknown extension")
 print("VRMC_vrm`），拿不到 humanoid，只能退回按节点名找，兜底不一定命中。")

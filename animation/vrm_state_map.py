@@ -12,7 +12,6 @@ animation.vrm_state_map — 宠物状态 → VRM 动画/表情映射（Task 3）
   app.js 以 STATE_DEFS（app.js:29-37）小写键严格校验，非小写将被
   warn + 拒绝（app.js:597），故值域必须与之一致。
 - 表情名以 JS 侧 EXPR_PRESETS（neutral/happy/sad/relaxed）为准：
-  sleep→"relaxed"（与 STATE_DEFS sleep 的内置 expr 对齐，app.js:34）；
   talk→"neutral"（talk 的 happy 表情由 JS lipSync 通道派生，
   见 STATE_DEFS.talk.expr='happy'，app.js:31,475，本函数不重复设置）。
 """
@@ -20,8 +19,8 @@ animation.vrm_state_map — 宠物状态 → VRM 动画/表情映射（Task 3）
 # 所有标准状态（含新增情绪/交互状态）
 # JS 侧 STATE_DEFS 对未映射状态静默回退 idle
 STANDARD_STATES: tuple[str, ...] = (
-    "idle", "talk", "think", "listen", "sleep", "happy", "sad",
-    "angry", "surprise", "love", "dance", "wander", "stare",
+    "idle", "talk", "think", "listen", "happy", "sad",
+    "angry", "surprise", "love", "dance", "stare",
     "calm_down", "comfort", "pat", "poke",
 )
 
@@ -32,14 +31,12 @@ STATE_TO_VRM: dict[str, str] = {
     "talk":       "talk",
     "think":      "think",
     "listen":     "listen",
-    "sleep":      "sleep",
     "happy":      "happy",
     "sad":        "sad",
     "angry":      "idle",      # VRM无angry动画，回退idle+表情
     "surprise":   "idle",      # VRM无surprise动画，回退idle+表情
     "love":       "happy",     # love复用happy
     "dance":      "idle",      # VRM无dance动画，回退idle
-    "wander":     "idle",      # VRM无wander动画，回退idle
     "stare":      "idle",      # VRM无stare动画，回退idle
     "calm_down":  "idle",
     "comfort":    "idle",
@@ -54,14 +51,12 @@ _STATE_EXPRESSIONS: dict[str, str] = {
     "talk":       "neutral",   # talk的happy由JS lipSync派生
     "think":      "neutral",
     "listen":     "neutral",
-    "sleep":      "relaxed",
     "happy":      "happy",
     "sad":        "sad",
     "angry":      "angry",
     "surprise":   "surprised",
     "love":       "happy",
     "dance":      "happy",
-    "wander":     "neutral",
     "stare":      "neutral",
     "calm_down":  "relaxed",
     "comfort":    "relaxed",

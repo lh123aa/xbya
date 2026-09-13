@@ -24,7 +24,7 @@ def load(path):
     return json.loads(raw[20:20 + clen].decode("utf-8"))
 
 
-for name in ("xiaoyi_from_photo.vrm", "cat.vrm"):
+for name in ("xbya_from_photo.vrm", "cat.vrm"):
     p = ROOT / "assets" / "vrm" / name
     if not p.is_file():
         continue

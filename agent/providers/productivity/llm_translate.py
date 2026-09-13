@@ -93,7 +93,7 @@ def make_llm_translate(llm_once: Optional[LLMOnceCall]) -> Optional[Callable[[st
     """构造翻译函数；没有 LLM 时返回 None（工具会给出"还没接上翻译能力"）
 
     Args:
-        llm_once: LLM 单次补全（通常是 `XiaoyiApp.chat_once`）
+        llm_once: LLM 单次补全（通常是 `xbyaApp.chat_once`）
 
     Returns:
         `(text, target_lang) -> Optional[str]`，失败返回 None

@@ -486,7 +486,7 @@ def main() -> int:
         print(f"Python: {sys.version.split()[0]}  平台: {os.name}")
         print("=" * 74 + "\n")
 
-        tmp = Path(tempfile.mkdtemp(prefix="xiaoyi_metrics_"))
+        tmp = Path(tempfile.mkdtemp(prefix="xbya_metrics_"))
         sandbox = tmp / "Desktop"
         sandbox.mkdir(parents=True, exist_ok=True)
 

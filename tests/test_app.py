@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from core.app import XiaoyiApp, release_single_instance_lock
+from core.app import xbyaApp, release_single_instance_lock
 
 
 class TestAppRun:
@@ -25,7 +25,7 @@ class TestAppRun:
         """
         release_single_instance_lock()
         self.config_path = project_root / "config.yaml"
-        self.app = XiaoyiApp(str(self.config_path))
+        self.app = xbyaApp(str(self.config_path))
 
     def teardown_method(self):
         """测试后释放单实例锁，避免污染后续测试"""
@@ -112,14 +112,14 @@ class TestAppRun:
         assert created == []
 
 
-class TestXiaoyiApp:
+class TestxbyaApp:
     """应用主控测试类"""
     
     def setup_method(self):
         """测试前设置"""
         release_single_instance_lock()
         self.config_path = project_root / "config.yaml"
-        self.app = XiaoyiApp(str(self.config_path))
+        self.app = xbyaApp(str(self.config_path))
 
     def teardown_method(self):
         """测试后关闭应用

@@ -61,7 +61,7 @@
 | 开机自启 | 开关 | system.autostart | false |
 | 性能模式 | QComboBox low/medium/high | system.performance_mode | low |
 
-- 开机自启：Windows 注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 写入/删除（键名 XiaoYiPet；启动 exe 时写入 exe 路径，源码运行时写 python run.py）
+- 开机自启：Windows 注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 写入/删除（键名 xbyaPet；启动 exe 时写入 exe 路径，源码运行时写 python run.py）
 - 置顶开关：保存后宠物窗口 setWindowFlag(Qt.WindowStaysOnTopHint) 重显
 
 ### 7. 系统信息（只读）

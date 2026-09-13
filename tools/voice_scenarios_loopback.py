@@ -197,7 +197,7 @@ class Loopback:
         self.voice = voice
         self.model_size = model_size
         self.enabled = enabled
-        self.audio_dir = audio_dir or Path(tempfile.mkdtemp(prefix="xiaoyi_loop_"))
+        self.audio_dir = audio_dir or Path(tempfile.mkdtemp(prefix="xbya_loop_"))
         # 固定测激目录：见 roundtrip() 的长注释（为什么必须固定）
         self.stimulus_dir = Path(stimulus_dir) if stimulus_dir else None
         self.fresh_stimulus = fresh_stimulus
@@ -411,7 +411,7 @@ class Loopback:
 
         # 诊断用：把测激留档，便于"同一段音频离线重转写"来区分
         # "音频有问题" 与 "ASR 跨调用状态有问题"（默认关闭，不污染产物）
-        keep = os.environ.get("XIAOYI_KEEP_AUDIO")
+        keep = os.environ.get("xbya_KEEP_AUDIO")
         if keep:
             try:
                 Path(keep).mkdir(parents=True, exist_ok=True)
@@ -438,7 +438,7 @@ def make_sandbox() -> Path:
     返回 Desktop 目录本身；审计库/记忆库等落在它的**父目录**（沙箱内、白名单外），
     否则会被 `validate_path()` 拦下（这是安全设计的正确行为）。
     """
-    root = Path(tempfile.mkdtemp(prefix="xiaoyi_voice_")) / "Desktop"
+    root = Path(tempfile.mkdtemp(prefix="xbya_voice_")) / "Desktop"
     root.mkdir(parents=True)
     return root
 
@@ -869,7 +869,7 @@ def run_scenario_3(pipe, rec: Recorder, lb: Loopback, stack, idx: int) -> None:
           "源码里找不到 SPEECH_INTERRUPTED 发射点")
 
     # 无论接线如何，都实测一次"真实 app.interrupt_speech() 是否让管线看到打断"
-    from core.app import XiaoyiApp as _RealApp
+    from core.app import xbyaApp as _RealApp
 
     class _FakeApp:
         """最小的 app 壳：只提供 interrupt_speech 依赖的属性"""
@@ -884,7 +884,7 @@ def run_scenario_3(pipe, rec: Recorder, lb: Loopback, stack, idx: int) -> None:
         # 原写法在这里自己重写了一个 `interrupt_speech()`，语义是修复前的旧版
         # （只置标志、不发事件），于是这条核查无论产品代码怎么改都恒为 FAIL ——
         # 假件复刻了它本该检测的那个 bug，断言就成了空转。
-        # 现在直接引用 `XiaoyiApp` 的方法（只假造它依赖的环境属性）：
+        # 现在直接引用 `xbyaApp` 的方法（只假造它依赖的环境属性）：
         # 产品代码一旦回退，这里立刻变红。
         interrupt_speech = _RealApp.interrupt_speech
         notify_agent_interrupt = _RealApp.notify_agent_interrupt
@@ -932,7 +932,7 @@ def run_scenario_4(pipe, rec: Recorder, lb: Loopback, stack, desktop: Path,
 
     # ── 降级：Agent 装配失败 → app.agent_stack=None → 走原 _run_llm_reply ──
     print("\n  [降级核查] Agent 装配失败 / 未启用时的回退")
-    from core.app import XiaoyiApp
+    from core.app import xbyaApp
 
     pet_src = (PROJECT / "ui" / "pet_window.py").read_text(encoding="utf-8")
     app_src = (PROJECT / "core" / "app.py").read_text(encoding="utf-8")
@@ -949,7 +949,7 @@ def run_scenario_4(pipe, rec: Recorder, lb: Loopback, stack, desktop: Path,
     check("self.agent_stack = None" in app_src and "except Exception" in app_src,
           "core.app 装配异常时把 agent_stack 置 None（异常不冒泡到语音链路）",
           "core/app.py L206-261")
-    check(hasattr(XiaoyiApp, "_setup_agent_layer"),
+    check(hasattr(xbyaApp, "_setup_agent_layer"),
           "core.app 有 Agent 装配收口点（_setup_agent_layer）")
     # 真实装配的"降级栈"必须把全部输入转成 chat
     offline = build_agent_stack(build_cfg(desktop, sandbox, enabled=False),

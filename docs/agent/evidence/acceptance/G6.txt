@@ -51,7 +51,7 @@ Python: 3.12.8  平台: nt
 [tools] 未注册的工具: system_info
 [safety] 拒绝白名单外路径: C:\Windows\System32\drivers\etc\hosts
 [safety] 拒绝白名单外路径: C:\Program Files\secret.txt
-[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\xiaoyi_metrics_1da340p3\escaped.txt
+[safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\xbya_metrics_1da340p3\escaped.txt
 [safety] 拒绝白名单外路径: C:\Users\49046\AppData\Local\Temp\Windows\x.txt
 [safety] 拒绝 UNC 路径: \\server\share\file.txt
 [safety] 拒绝白名单外路径: C:\Windows

@@ -726,49 +726,6 @@ def generate_cat_dance_frames(width=128, height=128, num_frames=36) -> list[QIma
 
 
 # ── 闲逛 ─────────────────────────────────────────────
-def generate_cat_wander_frames(width=128, height=128, num_frames=24) -> list[QImage]:
-    """
-    闲逛：24帧（2秒），左右走动 + 东张西望 + 尾巴摇
-    """
-    blink = BlinkScheduler(fps=12)
-    frames = []
-
-    for i in range(num_frames):
-        img, p = _make_frame(width, height)
-        t = i / num_frames * 2 * math.pi
-
-        # 走路：左右平移 + 上下颠簸
-        walk_x = math.sin(t) * 12
-        walk_bounce = abs(math.sin(t * 2)) * 2
-        cx = width // 2 + walk_x
-        cy = height // 2 + 10 + walk_bounce
-        head_y = cy - 35
-
-        openness = blink.update()
-
-        # 画猫（正常表情 + 微摇摆）
-        _draw_cat(p, cx, cy, head_y, eye_openness=openness)
-
-        # 尾巴摇摆
-        tail_x = cx - 18
-        tail_y = cy + 5
-        tail_angle = math.sin(t * 3) * 0.5
-        p.setPen(QPen(OUTLINE_COLOR, 2.0))
-        p.setBrush(BODY_COLOR)
-        from PySide6.QtCore import QPointF
-        tail_end_x = tail_x - 12 + math.sin(tail_angle) * 8
-        tail_end_y = tail_y - 10 + math.cos(tail_angle) * 5
-        path = QPainterPath()
-        path.moveTo(tail_x, tail_y)
-        path.quadTo(tail_x - 8, tail_y - 5, tail_end_x, tail_end_y)
-        p.drawPath(path)
-
-        p.end()
-        frames.append(img)
-
-    return frames
-
-
 # ── 发呆 ─────────────────────────────────────────────
 def generate_cat_stare_frames(width=128, height=128, num_frames=30) -> list[QImage]:
     """
@@ -981,7 +938,6 @@ _STATE_GENERATORS = {
     "surprise":   generate_cat_surprise_frames,
     "love":       generate_cat_love_frames,
     "dance":      generate_cat_dance_frames,
-    "wander":     generate_cat_wander_frames,
     "stare":      generate_cat_stare_frames,
     "comfort":    generate_cat_comfort_frames,
     "calm_down":  generate_cat_calm_down_frames,

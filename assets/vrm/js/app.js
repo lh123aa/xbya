@@ -28,6 +28,21 @@ const PERF_MODE = (() => {
   const params = new URLSearchParams(window.location.search);
   return params.get('pfm') || 'high';
 })();
+
+/* 面向镜头的修正角（度）。由 Python 侧从 config 的 `ui.vrm_yaw_deg` 传入。
+ *
+ * 为什么不再写死 180：VRM 0.x 与 1.0 的**正面方向是相反的**（0.x 正面 +Z，
+ * 1.0 正面 −Z），所以"一律转 180°"必定把其中一半的模型转成背对镜头。
+ * 实测（读 GLB 明文，见 docs/agent/evidence/p5/vrm_facing.txt）：
+ *   · AvatarSample_A.vrm / chibi.vrm → VRM 0.x（VRoidStudio 导出）
+ *   · cat.vrm / chibi_handmade.vrm   → VRM 1.0
+ * 所以这个角必须可配、且默认值要与"当前配置里那个模型"匹配。 */
+const MODEL_YAW_DEG = (() => {
+  const params = new URLSearchParams(window.location.search);
+  const v = params.get('yaw');
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) ? n : 180;
+})();
 const LOW_QUALITY = PERF_MODE === 'low';   // 关抗锯齿 + 降 pixelRatio
 /* 目标渲染帧率上限（Chromium 空闲节流：低档 20fps 足够呼吸/眨眼平滑，省CPU） */
 const TARGET_FPS = PERF_MODE === 'low' ? 20 : 30;
@@ -295,8 +310,13 @@ function onModelLoaded(gltf) {
 
   _scene.add(vrm.scene);
 
-  // 让角色正面朝向镜头：VRoid 常默认面向 -Z，相机在 +Z，故绕 Y 转 180°
-  try { vrm.scene.rotation.y = Math.PI; } catch (_) {}
+  // 让角色正面朝向镜头。角度取自 config（经 `?yaw=` 传入），**不再写死 180°**：
+  // VRM 0.x 正面朝 +Z、1.0 正面朝 −Z，写死一个值必然让一半模型背对镜头。
+  // 默认 180 保持与改动前一致（向后兼容），配置可覆盖。
+  try {
+    vrm.scene.rotation.y = MODEL_YAW_DEG * DEG;
+    console.log('[petX] 面向修正 yaw=' + MODEL_YAW_DEG + '°');
+  } catch (_) {}
 
   if (vrm.lookAt) {
     try { vrm.lookAt.target = _camera; vrm.lookAt.autoUpdate = true; } catch (_) {}
@@ -350,26 +370,52 @@ function makeChibi(vrm) {
 }
 
 function fitCamera(scene) {
-  // Q版：以头部为瞄准中心，拉近取景（头部+上半身），让脸占窗口主导
+  // 取景目标：**把头和上半身放进画面**。
+  //
+  // 原先的算法是「取景高度 = 模型总高 × 0.50，顶部对齐发顶 + 12% 留白」。
+  // 这套比例**只对某一种头身比成立**。实测踩到：换成一个 Q 版（头大身子小、
+  // 头骨在 y=1.00、总高 1.50）之后，取景框只盖到 0.88~1.63 ——
+  // **脸上半部分在框外，屏幕里只剩头顶额头**。
+  //
+  // 改成**以头部为锚点**：有 humanoid 的 head 骨骼就用它，
+  // 取景高度由「头顶到下巴」这段实际高度决定，而不是由总高决定。
+  // 这样无论头身比怎么变，脸都在画面正中。
   const box = new THREE.Box3().setFromObject(scene);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const h = Math.max(size.y, 0.2);
-
-  // 头顶 = 包围盒最高点（含 Q版放大后的头发），据此留出头顶余量，保证不裁发顶
   const topY = box.max.y;
-  const frameH = h * 0.50;                       // 取景高度（聚焦，让头占主导）
-  const HEAD_MARGIN = h * 0.12;                  // 头顶上方留白（略大，容忍透视压缩+呼吸晃动）
-  // 让可见区顶部 = 发顶 + 余量：targetY + frameH/2 = topY + HEAD_MARGIN
-  const targetY = (topY + HEAD_MARGIN) - frameH / 2;
+
+  let frameH;                                    // 取景高度
+  let targetY;                                   // 相机瞄准高度
+
+  const headBone = _chibiHeadBone;
+  if (headBone) {
+    // 头骨的世界坐标（VRM 的 head 骨骼在脖子顶端、下巴附近）
+    const headPos = new THREE.Vector3();
+    headBone.getWorldPosition(headPos);
+    // 头顶到下巴 ≈ 头顶 Y − 头骨 Y；脸占这段的中心偏上
+    const headSpan = Math.max(topY - headPos.y, h * 0.12);
+    // 取景高度 = 头部高度的 2.1 倍（头 + 肩），保证脸不被裁
+    frameH = headSpan * 2.1;
+    // 瞄准点放在头骨稍下方一点，让脸居中而不是头顶居中
+    targetY = headPos.y + headSpan * 0.10;
+  } else {
+    // 兜底：没有 head 骨骼时退回原算法（保持向后兼容）
+    frameH = h * 0.50;
+    const HEAD_MARGIN = h * 0.12;
+    targetY = (topY + HEAD_MARGIN) - frameH / 2;
+  }
+
   const dist = (frameH / 2) / Math.tan((_camera.fov / 2) * DEG) * 1.02;
   _camera.position.set(center.x, targetY, center.z + Math.max(dist, size.z * 0.6 + 0.4));
   _camera.lookAt(center.x, targetY, center.z);
   _camera.updateProjectionMatrix();
   console.error('[petX-DEBUG] fitCamera box=(' + size.x.toFixed(2) + ',' + size.y.toFixed(2) + ',' + size.z.toFixed(2) +
     ') h=' + h.toFixed(2) + ' topY=' + topY.toFixed(2) + ' frameH=' + frameH.toFixed(2) +
-    ' targetY=' + targetY.toFixed(2) + ' dist=' + dist.toFixed(2) + ' aspectW=' + window.innerWidth +
-    ' aspectH=' + window.innerHeight + ' fov=' + _camera.fov);
+    ' targetY=' + targetY.toFixed(2) + ' dist=' + dist.toFixed(2) +
+    ' headAnchor=' + (headBone ? 'yes' : 'no') +
+    ' aspectW=' + window.innerWidth + ' aspectH=' + window.innerHeight + ' fov=' + _camera.fov);
 }
 
 /* ---------------- 点击 / 身体部位上报 ---------------- */

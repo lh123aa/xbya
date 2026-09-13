@@ -321,14 +321,14 @@ class TestStateForwarding:
         win = vrm_ready[0]
         bridge = vrm_ready[2]
         # 状态机迁移到映射状态 → 转发
-        win.state_machine.update = lambda delta: "sleep"
+        win.state_machine.update = lambda delta: "happy"
         win.last_time = 0.0
         win.tick()
-        assert bridge.state_calls == ["sleep"]
+        assert bridge.state_calls == ["happy"]
         # 迁移到契约外状态 → 不转发
         win.state_machine.update = lambda delta: "totally_unknown_state"
         win.tick()
-        assert bridge.state_calls == ["sleep"]
+        assert bridge.state_calls == ["happy"]
 
 
 class TestDegradation:

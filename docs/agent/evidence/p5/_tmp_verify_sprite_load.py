@@ -27,8 +27,8 @@ EXPECT = {
 }
 
 ctrl = AnimationController()
-ok = ctrl.load_pet("xinya")
-print(f"load_pet('xinya') -> {ok}")
+ok = ctrl.load_pet("xinya2")
+print(f"load_pet('xinya2') -> {ok}")
 print(f"动画数: {len(ctrl.clips)}   画布: {ctrl.get_size()}")
 print()
 

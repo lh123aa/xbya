@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 项目路径: `E:\程序\桌面宠物\xiaoyi-desktop-pet`，Windows，Python 3.12
+- 项目路径: `E:\程序\桌面宠物\xbya-desktop-pet`，Windows，Python 3.12
 - 热键默认 `Ctrl+Alt+M`；注册失败（占用）→ 气泡提示
 - config.yaml 新增键：`voice.hotkey_enabled`(true)、`voice.hotkey_toggle`(Ctrl+Alt+M)、`ui.always_on_top`(true)、`system.autostart`(false)
 - 保存写回 config.yaml（ConfigManager.set）；取消不写
@@ -470,7 +470,7 @@ logger = logging.getLogger(__name__)
 TTS_VOICES = [
     ("晓晓(女·温暖)", "zh-CN-XiaoxiaoNeural"),
     ("云希(男·阳光)", "zh-CN-YunxiNeural"),
-    ("晓伊(女·活泼)", "zh-CN-XiaoyiNeural"),
+    ("晓伊(女·活泼)", "zh-CN-xbyaNeural"),
     ("云健(男·稳重)", "zh-CN-YunjianNeural"),
     ("晓辰(女·优雅)", "zh-CN-XiaochenNeural"),
     ("晓涵(女·甜美)", "zh-CN-XiaohanNeural"),
@@ -1040,10 +1040,10 @@ Expected: FAIL（无这些方法）
                 if enabled:
                     import sys, os
                     exe = sys.executable if getattr(sys, "frozen", False) else f'"{sys.executable}" "{os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "run.py"))}"'
-                    winreg.SetValueEx(k, "XiaoYiPet", 0, winreg.REG_SZ, exe)
+                    winreg.SetValueEx(k, "xbyaPet", 0, winreg.REG_SZ, exe)
                 else:
                     try:
-                        winreg.DeleteValue(k, "XiaoYiPet")
+                        winreg.DeleteValue(k, "xbyaPet")
                     except FileNotFoundError:
                         pass
         except Exception as e:
@@ -1126,7 +1126,7 @@ Expected: 通过（仅2 pre-existing）
 - [ ] **Step 2: 重新打包**
 
 Run: `pyinstaller build.spec --noconfirm --clean`
-Expected: dist/XiaoYiPet/XiaoYiPet.exe 更新
+Expected: dist/xbyaPet/xbyaPet.exe 更新
 
 - [ ] **Step 3: Commit（如无代码改动跳过）**
 

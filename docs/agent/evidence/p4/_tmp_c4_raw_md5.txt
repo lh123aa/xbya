@@ -1,4 +1,4 @@
-﻿We have verified the 1488-byte reply is byte-identical three times:
+We have verified the 1488-byte reply is byte-identical three times:
 （三次百度响应逐字节相同 → 同一份 md5；谷歌因 nonce 随机而三次不同）
 403AF8943549C35B1B5915C502E4BC9A  _tmp_c4_raw_baidu_run1.html  bytes=1488
 403AF8943549C35B1B5915C502E4BC9A  _tmp_c4_raw_baidu_run2.html  bytes=1488

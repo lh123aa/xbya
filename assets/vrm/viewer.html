@@ -52,7 +52,30 @@
   <canvas id="petx-canvas"></canvas>
   <div id="petx-status" class="hidden">正在启动…</div>
 
-  <script src="./js/bridge.js"></script>
+  <!--
+    静态 JS 必须带缓存失效参数。
+    起因：`ui/pet_window.py` 只给 **模型路径** 加了 `_t` 时间戳防缓存，
+    `viewer.html` 引的 `./js/app.js` / `./js/bridge.js` 是**裸相对路径**。
+    QWebEngine 因此会沿用缓存的旧 JS —— 表现是「改了 app.js 却完全没生效」，
+    而服务端文件、`py_compile`、grep **全都显示正确**，极难排查。
+    实测踩到：给 app.js 加了朝向的 console.log，重启后日志里没有那行。
+
+    修法：把 Python 传来的 `_t`（它本来就在 URL 上）拼到脚本地址后面。
+    这同时也让「改了 JS 立刻生效」这件事不再依赖用户手动清缓存。
+  -->
+  <script>
+    (function () {
+      var t = new URLSearchParams(window.location.search).get('_t') || String(Date.now());
+      var bridge = document.createElement('script');
+      bridge.src = './js/bridge.js?t=' + encodeURIComponent(t);
+      document.head.appendChild(bridge);
+      // app.js 是 type=module，必须带同样的 type 才能按模块语义加载
+      var app = document.createElement('script');
+      app.type = 'module';
+      app.src = './js/app.js?t=' + encodeURIComponent(t);
+      document.head.appendChild(app);
+    })();
+  </script>
   <script>
     (function () {
       window.addEventListener('error', function (ev) {
@@ -71,6 +94,5 @@
       });
     })();
   </script>
-  <script type="module" src="./js/app.js"></script>
 </body>
 </html>

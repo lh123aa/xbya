@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 TTS_VOICES = [
     # ── 🎀 女声 ──
     ("🎀 晓晓 · 温暖知性", "zh-CN-XiaoxiaoNeural"),
-    ("🎀 晓伊 · 活泼可爱（欣雅推荐）", "zh-CN-XiaoyiNeural"),
+    ("🎀 晓伊 · 活泼可爱（欣雅推荐）", "zh-CN-xbyaNeural"),
     ("🎀 晓北 · 东北腔·爽朗", "zh-CN-liaoning-XiaobeiNeural"),
     ("🎀 晓妮 · 陕西方言·亲切", "zh-CN-shaanxi-XiaoniNeural"),
     ("🎀 晓嘉 · 粤语女声", "zh-HK-HiuGaaiNeural"),
@@ -155,7 +155,7 @@ class SettingsDialog(QDialog):
         "plugins.llm.params.model": "qwen2.5:1.5b",
         "plugins.asr.params.model_size": "small",
         "plugins.asr.params.device": "cpu",
-        "plugins.tts.params.voice": "zh-CN-XiaoyiNeural",
+        "plugins.tts.params.voice": "zh-CN-xbyaNeural",
         "plugins.tts.params.rate": 0,
         "plugins.tts.params.pitch": 0,
         "voice.hotkey_toggle": "Ctrl+Alt+M",
@@ -168,7 +168,7 @@ class SettingsDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.cfg = config_manager
-        self.setWindowTitle("欣雅设置")
+        self.setWindowTitle("系统设置")
         self.setModal(False)  # 非模态，宠物继续可用
         self.resize(560, 460)
 
@@ -182,11 +182,12 @@ class SettingsDialog(QDialog):
         self.tabs = QTabWidget()
         root.addWidget(self.tabs)
 
-        # 归类：语音（输入+输出合并）、AI 大脑、外观、性能、快捷键、系统信息
+        # 归类：语音（输入+输出合并）、AI 大脑、外观、快捷键、系统信息
+        # 原「⚡ 性能」页已并入「ℹ️ 系统信息」——"性能档位由本机硬件决定"，
+        # 两页本来就共用 hardware_detector 与同一份硬件摘要，分开只是让人来回切。
         self.tabs.addTab(self._tab_voice(), "🎤 语音")
         self.tabs.addTab(self._tab_ai(), "🧠 AI 大脑")
         self.tabs.addTab(self._tab_look(), "🎀 外观")
-        self.tabs.addTab(self._tab_perf(), "⚡ 性能")
         self.tabs.addTab(self._tab_hotkey(), "⌨️ 快捷键")
         self.tabs.addTab(self._tab_info(), "ℹ️ 系统信息")
 
@@ -284,27 +285,31 @@ class SettingsDialog(QDialog):
 
         return w
 
-    def _tab_perf(self):
-        """性能与模型：硬件评估、性能档位、插件状态"""
-        w = QWidget()
-        form = QFormLayout(w)
+    def _build_perf_section(self, form: QFormLayout):
+        """构建「性能与模型」区块（原独立页，现并入系统信息页）。
+
+        Args:
+            form: 目标表单布局（由 `_tab_info` 传入，与系统信息共用一页）
+
+        为什么合并：性能档位**由本机硬件决定**，与"系统信息"读的是同一个
+        `hardware_detector`、同一份硬件摘要。分成两页只会让人来回切页对照。
+        """
         self.perf_combo2 = QComboBox()
         self.perf_combo2.addItems(["low", "medium", "high"])
         # 自动评估按钮
         auto_btn = QPushButton("🔍 重新检测硬件并推荐")
         auto_btn.clicked.connect(self._auto_evaluate)
+        form.addRow(QLabel("── 性能与模型 ──"))
         form.addRow("性能档位", self.perf_combo2)
         form.addRow("", auto_btn)
-        # 硬件信息（只读摘要）
-        self._perf_hw_label = QLabel("—")
-        self._perf_hw_label.setWordWrap(True)
-        form.addRow("本机硬件", self._perf_hw_label)
         # 插件状态
         self._perf_plugin_label = QLabel("—")
         self._perf_plugin_label.setWordWrap(True)
         form.addRow("插件状态", self._perf_plugin_label)
-        form.addRow("", QLabel("说明：档位越低越省资源(低→tiny/30fps)，越高越准(高→medium/60fps)。ASR 模型/设备可在『语音识别』页手动改。"))
-        return w
+        form.addRow("", QLabel(
+            "说明：档位越低越省资源(低→tiny/30fps)，越高越准(高→medium/60fps)。"
+            "ASR 模型/设备可在『语音』页手动改。"
+        ))
 
     def _auto_evaluate(self):
         """重新检测硬件，按推荐设置性能档位（并联动ASR模型/设备）"""
@@ -316,22 +321,10 @@ class SettingsDialog(QDialog):
             self._refresh_perf_hw()
             self._apply_perf_to_asr(rec)
         except Exception as e:
-            self._perf_hw_label.setText(f"检测失败: {e}")
+            self._perf_plugin_label.setText(f"检测失败: {e}")
 
     def _refresh_perf_hw(self):
-        """刷新"性能与模型"页的硬件摘要 + 插件状态"""
-        try:
-            from core.hardware_detector import get_hardware_detector
-            hw = get_hardware_detector().detect()
-            self._perf_hw_label.setText(
-                f"CPU {hw.cpu_count}核 · 内存 {hw.memory_gb:.1f}GB\n"
-                f"GPU {'有' if hw.has_gpu else '无'}"
-                + (f" ({hw.gpu_name})" if hw.gpu_name else "")
-                + f"\n推荐档位：{hw.recommended_mode}"
-            )
-        except Exception as e:
-            self._perf_hw_label.setText(f"硬件检测失败: {e}")
-        # 插件状态
+        """刷新硬件摘要 + 插件状态（系统信息页用，两处内容已同页）"""
         self._refresh_plugin_status()
 
     def _apply_perf_to_asr(self, mode: str):
@@ -667,12 +660,21 @@ class SettingsDialog(QDialog):
                 self.subtitle_bg_btn.setText(hex_s)
 
     def _tab_info(self):
+        """ℹ️ 系统信息：硬件/运行环境 + 性能与模型（原「⚡ 性能」页已并入）。"""
         w = QWidget()
         form = QFormLayout(w)
-        # 硬件信息（从hardware_detector）
+
+        # ── 系统信息 part ──
+        form.addRow(QLabel("── 系统信息 ──"))
         info = self._collect_system_info()
         for k, v in info.items():
-            form.addRow(k, QLabel(str(v)))
+            label = QLabel(str(v))
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            form.addRow(k, label)
+
+        # ── 性能与模型 part（原独立页，现同页） ──
+        self._build_perf_section(form)
         return w
 
     def _collect_system_info(self) -> dict:
@@ -751,7 +753,7 @@ class SettingsDialog(QDialog):
         idx = self.asr_device_combo.findText(cfg.get("plugins.asr.params.device", "cpu"))
         self.asr_device_combo.setCurrentIndex(max(idx, 0))
 
-        voice = cfg.get("plugins.tts.params.voice", "zh-CN-XiaoyiNeural")
+        voice = cfg.get("plugins.tts.params.voice", "zh-CN-xbyaNeural")
         idx = self.tts_voice_combo.findData(voice)
         if idx >= 0:
             self.tts_voice_combo.setCurrentIndex(idx)
@@ -771,7 +773,7 @@ class SettingsDialog(QDialog):
         self.pet_size_label.setText(f"{size}px")
         self.topmost_check.setChecked(cfg.get("ui.always_on_top", True))
         self.autostart_check.setChecked(cfg.get("system.autostart", False))
-        # 新增"性能与模型"页控件（权威档位）
+        # 性能档位（权威值，控件现位于「系统信息」页）
         idx = self.perf_combo2.findText(cfg.get("system.performance_mode", "low"))
         self.perf_combo2.setCurrentIndex(max(idx, 0))
         self._refresh_perf_hw()

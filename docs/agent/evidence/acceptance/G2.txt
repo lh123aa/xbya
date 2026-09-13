@@ -53,7 +53,7 @@ tests/test_app.py::TestAppRun::test_run_injects_app_and_loads_pet
     from scipy.ndimage.morphology import binary_dilation
 
 conftest.py:113
-  E:\程序\桌面宠物\xiaoyi-vrm-worktree\conftest.py:113: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  E:\程序\桌面宠物\xbya-vrm-worktree\conftest.py:113: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
     if isinstance(obj, HotkeyManager):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

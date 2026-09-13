@@ -67,7 +67,7 @@ def show(obj):
         w("```")
 
 
-tmp = Path(tempfile.mkdtemp(prefix="xiaoyi_b3_"))
+tmp = Path(tempfile.mkdtemp(prefix="xbya_b3_"))
 db = tmp / "mem.db"
 
 # ── 一、真 ST 嵌入器本身 ──

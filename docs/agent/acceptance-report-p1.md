@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 报告编号 | XIAOYI-AGENT-P1-ACC-001 |
+| 报告编号 | xbya-AGENT-P1-ACC-001 |
 | 报告日期 | 2026-09-10 |
 | 验收对象 | 欣雅 Agent 执行层 P1（Phase A~H） |
 | 验收依据 | `AGENTS.md` §7、`docs/agent/acceptance.md` v1.0、`docs/agent/spec.md`、`docs/agent/tasks.json` |

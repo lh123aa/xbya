@@ -13,9 +13,7 @@ class PetStateMachine:
 
     # 基础状态转移图（idle 为枢纽，可随机到多种状态）
     STATES = {
-        "idle":     {"next": ["wander", "sleep", "happy", "stare", "dance", "surprise", "angry"], "weight": [12, 6, 8, 8, 6, 3, 2]},
-        "wander":   {"next": ["idle", "stare", "happy"], "weight": [70, 15, 15]},
-        "sleep":    {"next": ["idle"], "weight": [100]},
+        "idle":     {"next": ["happy", "stare", "dance", "surprise", "angry"], "weight": [10, 10, 8, 4, 2]},
         "happy":    {"next": ["idle", "dance", "love"], "weight": [50, 25, 25]},
         "stare":    {"next": ["idle", "think", "surprise"], "weight": [60, 25, 15]},
         "dance":    {"next": ["idle", "happy"], "weight": [60, 40]},
@@ -39,7 +37,7 @@ class PetStateMachine:
         "sad":      {"sad": 4, "comfort": 3},
         "angry":    {"angry": 4, "calm_down": 3},
         "excited":  {"happy": 3, "dance": 3, "surprise": 2},
-        "calm":     {"sleep": 3, "idle": 2, "think": 2},
+        "calm":     {"idle": 2, "think": 2},
         "neutral":  {},
     }
 
@@ -104,8 +102,6 @@ class PetStateMachine:
         """各状态的持续时长范围（秒）"""
         durations = {
             "idle":      (8, 15),
-            "wander":    (3, 6),
-            "sleep":     (15, 30),
             "happy":     (3, 6),
             "stare":     (4, 8),
             "dance":     (4, 7),

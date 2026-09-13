@@ -25,7 +25,7 @@ Agent 栈: router=HybridRouter summarizer=HybridSummarizer planner=HybridPlanner
 [PASS] 装配出的就是 HybridRouter
   内层 LLM 路由 = LLMRouter
 [PASS] LLM 路由已注入（非 None）
-[PASS] 注入的正是 app.route_with_tools（真实 API）  → XiaoyiApp.route_with_tools
+[PASS] 注入的正是 app.route_with_tools（真实 API）  → xbyaApp.route_with_tools
   '帮我把下载目录收拾一下' → file_list(0.80) params={'dirs': ['Downloads']}  6397ms
   '桌面太乱了帮我整理下' → file_list(0.80) params={'dirs': ['Desktop']}  4021ms
   LLM 命中计数: 0 → 2

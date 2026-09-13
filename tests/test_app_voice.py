@@ -1,5 +1,5 @@
 """
-XiaoyiApp语音链路接口测试：chat_stream/synthesize/play_audio
+xbyaApp语音链路接口测试：chat_stream/synthesize/play_audio
 """
 
 import sys
@@ -10,12 +10,12 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import pytest
-from core.app import XiaoyiApp
+from core.app import xbyaApp
 
 
 class TestAppVoiceInterface:
     def _make_app(self):
-        app = XiaoyiApp.__new__(XiaoyiApp)  # 不跑完整初始化
+        app = xbyaApp.__new__(xbyaApp)  # 不跑完整初始化
         app.plugins = {}
         return app
 

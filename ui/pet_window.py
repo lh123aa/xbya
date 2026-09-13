@@ -4,12 +4,13 @@ PetWindow - PySide6桌面宠物主窗口
 """
 
 from PySide6.QtWidgets import QWidget, QMenu, QMessageBox
-from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QUrlQuery, QSettings, QObject, Signal
+from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QUrlQuery, QSettings, QObject, Signal, QThread, QMetaObject
 from PySide6.QtGui import QPainter, QColor
 from animation.controller import AnimationController
 from animation.vrm_state_map import STATE_TO_VRM
 from ui.state_machine import PetStateMachine
 import logging
+import threading
 import time
 import os
 import json
@@ -77,7 +78,9 @@ class PetWindow(QWidget):
 
         # 拖拽
         self.dragging = False
-        self.drag_offset = QPoint()
+        self._drag_mouse_start = QPoint()
+        self._drag_win_start = QPoint()
+        self._is_snapped_state = False  # 只有 _edge_snap() 真正执行贴边时才置 True
 
         # 常驻监听状态
         self._monitor_mic = None
@@ -87,15 +90,25 @@ class PetWindow(QWidget):
         self._recent_invalid = 0          # 连续无效响应计数
         self._echo_cooldown_until = 0.0   # TTS结束后冷却截止时间戳
         self._processing = False          # 正在处理中（防并发）
+        self._processing_since = 0.0      # 进入处理态的时刻（看门狗用）
+        self._processing_watchdog_sec = 45.0  # 处理态卡死上限（秒），超时强制解锁
         self._invalid_hint_until = 0.0    # 无效提示气泡冷却截止时间戳
         self._pending_wavs: list = []     # 处理中收到的待处理语音（FIFO，防止连说被丢）
         self._speaking = False            # 是否正在播放（半双工：播放时暂停监听降噪）
         self._echo_tail_until = 0.0       # 播放后残响屏蔽截止时间戳（防回声自言自语）
+        self._last_speech_duration = 0.0  # 上次播报实际持续秒数（用于缩放回声屏蔽窗口）
         self._voice_muted = False         # 用户级静音开关：完全关闭语音输出（气泡仍显示）
         self._interrupt_block_until = 0.0 # 打断冷却截止时间戳（防宠物自身回声连环打断）
         self._interrupt_active_until = 0.0  # 打断反馈气泡保护期：此时间内不被tick清除
         self._interrupt_cooldown_until = 0.0  # 用户主动打断冷却：防止连续快速打断
         self._sentence_emotions: list[str] = []  # 逐句情绪缓存（播放时逐句切换动效）
+        # ★ 播报代数计数器：每次 _speak_sentences 递增。
+        #   用途：只允许"最新一次播报"的延迟恢复真正恢复麦克风。
+        #   没有它时，一次交互里 ack→result→refine 三次播报各自起一个
+        #   1.5s 延迟恢复线程，**先起的那个会在后面还在说话时把麦克风打开** ——
+        #   麦克风拾到 TTS 回声 → 触发假录音 → 冷却期挡住用户真实说话。
+        #   用户感知就是"她听不见我说话了"。
+        self._speak_generation = 0
 
         # ── Agent 层接入（P0）──
         self._agent_bridge = AgentEventBridge()
@@ -107,6 +120,7 @@ class PetWindow(QWidget):
         self._agent_bridge.reminderReceived.connect(self._on_agent_reminder)
         self._agent_disposers: list = []   # 事件订阅的注销函数
         self._agent_busy = False           # Agent 正在处理（阻止并发新请求）
+        self._agent_busy_since = 0.0       # Agent 开始处理的时刻（用于超时兜底）
 
         # 脚下字幕样式（默认黑底白字；设置保存后 update_subtitle_style 更新）
         self._subtitle_enabled = True
@@ -142,8 +156,8 @@ class PetWindow(QWidget):
         # 应用引用
         self.app = None
 
-        # 记住上次关闭时的桌面位置（QSettings 持久化，跨会话）
-        self._restore_position()
+        # 位置恢复延迟到 load_pet 之后（此时窗口尺寸尚未确定，用默认300x350验证会误判）
+        self._position_restored = False
 
         logger.info("PetWindow初始化完成")
 
@@ -169,17 +183,19 @@ class PetWindow(QWidget):
 
     # 用组织名/应用名限定 QSettings 命名空间，避免与其他程序冲突
     def _qsettings(self) -> QSettings:
-        return QSettings("XiaoYiPet", "XiaoYiPet")
+        return QSettings("xbyaPet", "xbyaPet")
 
     def _restore_position(self) -> None:
         """启动时恢复上次关闭的位置；若不存在或位置非法则用默认(居中偏下)。"""
         try:
             s = self._qsettings()
             if not s.contains("pos/x") or not s.contains("pos/y"):
+                logger.info("[位置] 无存档，使用默认位置")
                 self._set_default_position()
                 return
             x, y = int(s.value("pos/x", -1)), int(s.value("pos/y", -1))
             if x < 0 or y < 0:
+                logger.info(f"[位置] 存档非法 x={x} y={y}，使用默认位置")
                 self._set_default_position()
                 return
             # 若保存的位置已不在任何屏幕可见区（分辨率变化/多屏拔除），回退默认
@@ -187,8 +203,10 @@ class PetWindow(QWidget):
             w, h = self.width(), self.height()
             if (x >= geo.right() - 10 or x + w <= geo.left() or
                     y >= geo.bottom() - 10 or y + h <= geo.top()):
+                logger.info(f"[位置] 存档位置({x},{y})超出屏幕范围，使用默认位置")
                 self._set_default_position()
                 return
+            logger.info(f"[位置] 恢复到 ({x}, {y})")
             self.move(x, y)
         except Exception as e:
             logger.warning(f"恢复存档位置失败: {e}")
@@ -208,9 +226,11 @@ class PetWindow(QWidget):
         """保存当前窗口位置到 QSettings。"""
         try:
             s = self._qsettings()
-            s.setValue("pos/x", int(self.x()))
-            s.setValue("pos/y", int(self.y()))
+            x, y = int(self.x()), int(self.y())
+            s.setValue("pos/x", x)
+            s.setValue("pos/y", y)
             s.sync()
+            logger.info(f"[位置] 保存到 ({x}, {y})")
         except Exception as e:
             logger.warning(f"保存存档位置失败: {e}")
 
@@ -346,7 +366,11 @@ class PetWindow(QWidget):
         return bool(getattr(stack.pipeline, "_enabled", False))
 
     def _on_agent_ack(self, data: dict) -> None:
-        """Agent 即时确认：先让用户听到/看到反馈（不等执行结果）"""
+        """Agent 即时确认：先让用户听到/看到反馈（不等执行结果）
+
+        注意：本方法在主线程（Qt signal）中执行。
+        play_audio / _speak_sentences 会阻塞，必须放到后台线程。
+        """
         text = data.get("text") or ""
         audio = data.get("audio")
         elapsed = data.get("elapsed_ms", 0)
@@ -355,21 +379,27 @@ class PetWindow(QWidget):
             self.show_bubble(text, 2000)
         # 确认语不改变状态机（think 已由 _voice_pipeline 设置）
 
-        if audio:
-            # 缓存命中：直接播放（≈0 延迟）
-            try:
-                self.app.play_audio(audio)
-            except Exception as e:
-                logger.warning("[agent] 播放缓存确认语失败: %s", e)
-        elif text:
-            # 未命中缓存：降级实时合成（+0.7s）
-            self._speak_sentences([text])
+        if audio or text:
+            def _play():
+                try:
+                    if audio:
+                        self.app.play_audio(audio)
+                    else:
+                        self._speak_sentences([text])
+                except Exception as e:
+                    logger.warning("[agent] 播放缓存确认语失败: %s", e)
+                finally:
+                    # 确认语也是"她发出的声音"，播完同样要屏蔽回声，
+                    # 否则这段音频会被麦克风收回、当成用户的下一句话
+                    self._arm_echo_guard()
+            threading.Thread(target=_play, daemon=True).start()
 
         logger.info("[agent] ack 已反馈 (%.0fms): %s", elapsed, text)
 
     def _on_agent_result(self, data: dict) -> None:
         """Agent 执行结果：情绪动效 + 气泡 + 语音播报"""
         self._agent_busy = False
+        self._agent_busy_since = 0.0
         summary = data.get("summary") or ""
         emotion = data.get("emotion") or "talk"
         success = data.get("success", True)
@@ -399,17 +429,37 @@ class PetWindow(QWidget):
             sentences = [summary]
 
         self._sentence_emotions = [anim_state] * len(sentences)
-        self._speak_sentences(sentences)
+        # 播报结果（复用现有分句播报链路：逐句字幕 + 逐句动效）
+        # ⚠️ **立即暂停麦克风**（在起线程之前）：防止播报开始后麦克风
+        # 拾到TTS音频被当成用户说话。_speak_sentences 内部也会暂停，
+        # 但那里在后台线程里，有竞态窗口。
+        if self._monitor_mic:
+            try:
+                self._monitor_mic.pause_listening()
+            except Exception:
+                pass
+        def _play_then_guard():
+            try:
+                self._speak_sentences(sentences)
+            finally:
+                self._arm_echo_guard()
 
-        # 播报后回声冷却（防止宠物自己的声音触发新一轮识别）
-        try:
-            cooldown = 3.0
-            if getattr(self.app, "config_manager", None):
-                cooldown = float(self.app.config_manager.get("voice.echo_cooldown", 3.0))
-            self._echo_cooldown_until = time.time() + cooldown + 1.0
-            self._echo_tail_until = time.time() + 1.0
-        except Exception:
-            pass
+        threading.Thread(target=_play_then_guard, daemon=True).start()
+
+    def _arm_echo_guard(self) -> None:
+        """在**播放结束之后**启动回声冷却 + 残响屏蔽窗口。
+
+        所有播报路径（Agent 结果 / Agent 确认语 / 润色补播 / LLM 回复）
+        都必须走这里，否则那条路径的回声就不会被屏蔽 —— 之前的
+        `_on_agent_ack` / `_on_agent_refine` 就属于"漏挂"的那类。
+
+        播报期间麦克风已由 _speak_sentences 暂停（pause_listening），
+        此处冷却只需覆盖残响（扬声器余音 + 房间混响），固定 2 秒足够。
+        """
+        tail = 1.0   # 残响屏蔽窗口（秒）—— 暂停机制已挡住播报期间的回声，缩短以加快交互
+        self._echo_tail_until = time.time() + tail
+        self._echo_cooldown_until = time.time() + tail
+        logger.info("[voice] 回声屏蔽已启动 (残响窗口 %.1fs)", tail)
 
     def _on_agent_refine(self, data: dict) -> None:
         """润色补播（P2-2）：LLM 把措辞改善后补一句，不打断当前播报节奏
@@ -434,7 +484,14 @@ class PetWindow(QWidget):
             sentences = [summary]
 
         self._sentence_emotions = ["talk"] * len(sentences)
-        self._speak_sentences(sentences)
+        # _speak_sentences 会阻塞，必须放后台；播完同样要挂回声屏蔽
+        def _play_then_guard():
+            try:
+                self._speak_sentences(sentences)
+            finally:
+                self._arm_echo_guard()
+
+        threading.Thread(target=_play_then_guard, daemon=True).start()
 
     def _on_agent_confirm(self, data: dict) -> None:
         """Agent 请求确认：气泡 + 语音询问，等待用户答复"""
@@ -449,15 +506,31 @@ class PetWindow(QWidget):
 
         self._agent_busy = True
         self._sentence_emotions = ["think"] * 1
-        self._speak_sentences([question])
+        # _speak_sentences 会阻塞，必须放后台；播完挂回声屏蔽
+        def _play_then_guard():
+            try:
+                self._speak_sentences([question])
+            finally:
+                self._arm_echo_guard()
+
+        threading.Thread(target=_play_then_guard, daemon=True).start()
 
     def _on_agent_chat(self, data: dict) -> None:
-        """Agent 判定为闲聊：回退到原有 LLM 链路"""
+        """Agent 判定为闲聊：回退到原有 LLM 链路
+
+        _run_llm_reply 包含 LLM 调用 + TTS + 播放，会阻塞主线程，
+        必须放到后台线程。
+        """
         text = data.get("text") or ""
         request_id = data.get("request_id") or ""
         self._agent_busy = False
+        self._agent_busy_since = 0.0
         if text:
-            self._run_llm_reply(text, request_id)
+            threading.Thread(
+                target=self._run_llm_reply,
+                args=(text, request_id),
+                daemon=True,
+            ).start()
 
     def _on_agent_reminder(self, data: dict) -> None:
         """提醒到点：播报内容（F7）
@@ -474,9 +547,36 @@ class PetWindow(QWidget):
         logger.info("[提醒] 到点播报: %s", what)
         self.show_bubble(text, 4000)
         try:
-            self._speak_sentences([text])
+            # _speak_sentences 会阻塞，必须放后台
+            threading.Thread(
+                target=self._speak_sentences,
+                args=([text],),
+                daemon=True,
+            ).start()
         except Exception as e:
             logger.warning("[提醒] 播报失败: %s", e)
+
+    def _relayout_pet(self):
+        """把精灵**水平居中**、并**抬到字幕条上方**。
+
+        修的是一个一直存在的布局缺陷：`pet_x/pet_y` 原本硬编码 (100, 100)
+        且**从不随窗口尺寸重算**。窗口是 `pet_size + 100`（127 → 228×228），
+        而精灵画布只有 128×128 —— 于是精灵被画在 x[100..227] y[100..227]，
+        **贴在窗口右下角**；窗口底部 44px 的字幕条（`SUBTITLE_AREA`）又正好
+        落在 y[186..221]，**压在角色胸口上**。
+
+        现在的算法（不写死坐标，跟着尺寸走）：
+          · 水平：在窗口里居中
+          · 垂直：放进「窗口高 − 字幕区」这块可用区里居中
+        两个夹取都做了 `max(0, …)`，窗口比画布还小时不会算出负坐标。
+        """
+        try:
+            cw, ch = self.anim_controller.get_size()
+        except Exception:
+            return
+        avail_h = max(1, self.height() - SUBTITLE_AREA)
+        self.pet_x = max(0, (self.width() - cw) // 2)
+        self.pet_y = max(0, (avail_h - ch) // 2)
 
     def load_pet(self, pet_name: str):
         """加载宠物"""
@@ -485,6 +585,13 @@ class PetWindow(QWidget):
             return  # VRM 模式窗口尺寸由 3D 视图控制，不按精灵尺寸调整
         size = self.anim_controller.get_size()
         self.setFixedSize(size[0] + 100, size[1] + 100)  # 留边距给阴影和气泡
+        logger.info(f"[位置] load_pet后尺寸={self.width()}x{self.height()}, 当前位置=({self.x()},{self.y()})")
+        self._relayout_pet()
+        # 窗口尺寸确定后再恢复位置（此时验证用的宽高才是真实的）
+        if not self._position_restored:
+            self._position_restored = True
+            self._restore_position()
+            logger.info(f"[位置] restore后位置=({self.x()},{self.y()})")
 
     def tick(self):
         """主循环"""
@@ -492,19 +599,34 @@ class PetWindow(QWidget):
         delta = now - self.last_time
         self.last_time = now
 
+        # Agent 忙碌超时兜底：Agent 层异常/事件丢失时，_agent_busy 会永久为 True，
+        # 导致所有后续语音被静默排队 → 用户感知为"她听不见我说话"。
+        # 超过 30 秒无结果即视为失败，释放锁让用户能继续对话。
+        if self._agent_busy and self._agent_busy_since:
+            if now - self._agent_busy_since > 30.0:
+                logger.warning("[agent] 处理超时(>30s)，释放忙碌锁")
+                self._agent_busy = False
+                self._agent_busy_since = 0.0
+                self.show_bubble("抱歉，这个请求超时了…", 2500)
+                self.set_state("idle")
+
+        # 处理态看门狗：ASR/LLM/TTS 任一阶段卡死时强制解锁。
+        # 与上面的 _agent_busy 超时是**两道独立的闸**：那道管 Agent 层丢事件，
+        # 这道管 _processing 标志本身被卡住（例如 ASR 推理线程挂死）。
+        self._recover_stuck_processing()
+
         # 更新状态机
         new_state = self.state_machine.update(delta)
         if new_state:
             self.anim_controller.set_state(new_state)
             self._forward_vrm_state(new_state)
-            logger.debug(f"状态切换: {new_state}")
 
         # 更新动画（VRM 模式由 Web 渲染层驱动，跳过精灵合成）
-        if self.render_mode != "vrm":
+        # 拖拽时跳过动画更新，减少 CPU 占用
+        if self.render_mode != "vrm" and not self.dragging:
             self.anim_controller.update(delta)
 
-        # 更新气泡（语音播报期间由播放线程控制，不由定时器清除）
-        # 打断反馈气泡在保护期内也不被清除（确保"已停止"消息能完整展示）
+        # 更新气泡
         now_ts = time.time()
         in_protected = now_ts < self._interrupt_active_until
         if self.bubble_timer > 0 and not self._speaking and not in_protected:
@@ -512,27 +634,34 @@ class PetWindow(QWidget):
             if self.bubble_timer <= 0:
                 self.bubble_text = ""
 
-        # 重绘
-        self.update()
+        # 智能重绘：只在有新帧或气泡变化时才触发 paintEvent
+        if self.render_mode == "vrm":
+            self.update()
+        elif (self.anim_controller.has_new_frame()
+              or self.bubble_text != getattr(self, '_last_bubble', '')):
+            self.anim_controller.mark_frame_consumed()
+            self._last_bubble = self.bubble_text
+            self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
         if self.render_mode == "vrm":
-            # VRM 模式：精灵由 WebEngine 视图渲染（占窗口上部），
-            # 底部留字幕区（SUBTITLE_AREA）绘制脚下字幕
             if self.bubble_text:
                 self._draw_subtitle(painter)
             painter.end()
             return
 
-        # 绘制阴影
+        cw, ch = self.anim_controller.get_size()
+
+        # 绘制阴影（只在有实际内容时绘制）
         painter.setBrush(QColor(0, 0, 0, 40))
+        painter.setPen(Qt.NoPen)
         painter.drawEllipse(
             self.pet_x + 20,
-            self.pet_y + self.anim_controller.get_size()[1] - 10,
-            self.anim_controller.get_size()[0] - 40,
+            self.pet_y + ch - 10,
+            cw - 40,
             20
         )
 
@@ -540,7 +669,7 @@ class PetWindow(QWidget):
         frame = self.anim_controller.composite()
         painter.drawImage(self.pet_x, self.pet_y, frame)
 
-        # 绘制脚下字幕（代替气泡）
+        # 绘制脚下字幕
         if self.bubble_text:
             self._draw_subtitle(painter)
 
@@ -642,16 +771,58 @@ class PetWindow(QWidget):
             self._subtitle_fg = QColor(255, 255, 255)
         self.update()
 
+    def _is_main_thread(self) -> bool:
+        """检查当前是否在主线程"""
+        return QThread.currentThread() == self.thread()
+
+    def _invoke_on_main(self, fn) -> None:
+        """如果不在主线程，通过 QTimer.singleShot(0, ...) 转到主线程执行"""
+        if self._is_main_thread():
+            fn()
+        else:
+            QTimer.singleShot(0, fn)
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """清理 LLM 输出中的 markdown 格式符号，只保留纯文本"""
+        import re
+        if not text:
+            return text
+        # 去掉 markdown 加粗/斜体标记 **bold** / *italic* / __bold__ / _italic_ / ___bold___
+        text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+        text = re.sub(r'_{1,3}(.+?)_{1,3}', r'\1', text)
+        # 去掉标题标记 # Title ## Subtitle
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        # 去掉代码块标记 ```code```
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        text = re.sub(r'`(.+?)`', r'\1', text)
+        # 去掉引用标记 > quote
+        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+        # 去掉水平分割线 --- / *** / ___
+        text = re.sub(r'^[\-\*=_]{3,}\s*$', '', text, flags=re.MULTILINE)
+        # 去掉链接 [text](url) → text
+        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+        # 去掉孤立的 * / # / > 残留（连续2个以上）
+        text = re.sub(r'[\*#>]{2,}', '', text)
+        # 去掉多余空白行（清理后可能留下空行）
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
     def show_bubble(self, text: str, duration: int = 3000):
-        """显示字幕文本（原气泡接口，保留调用语义）"""
-        self.bubble_text = text
-        self.bubble_timer = duration
+        """显示字幕文本（线程安全：后台线程调用会自动转到主线程）"""
+        cleaned = self._sanitize_text(text)
+        def _do():
+            self.bubble_text = cleaned
+            self.bubble_timer = duration
+        self._invoke_on_main(_do)
 
     def set_state(self, state: str):
-        """外部设置状态"""
-        self.state_machine.trigger_state(state)
-        self.anim_controller.set_state(state)
-        self._forward_vrm_state(state)
+        """外部设置状态（线程安全：后台线程调用会自动转到主线程）"""
+        def _do():
+            self.state_machine.trigger_state(state)
+            self.anim_controller.set_state(state)
+            self._forward_vrm_state(state)
+        self._invoke_on_main(_do)
 
     # ========== VRM 渲染层（Task 4） ==========
 
@@ -737,6 +908,16 @@ class PetWindow(QWidget):
             except Exception:
                 _pfm = "low"
             _query.addQueryItem("pfm", _pfm)
+            # 面向镜头的修正角（度）：可配，默认 180（保持改动前行为）。
+            # 为什么要可配：VRM 0.x 正面朝 +Z、1.0 正面朝 −Z，写死一个值
+            # 必然让其中一半模型背对镜头（实测见 docs/agent/evidence/p5/vrm_facing.txt）。
+            _yaw = 180
+            try:
+                if self.app:
+                    _yaw = int(self.app.config_manager.get("ui.vrm_yaw_deg", 180))
+            except Exception:
+                _yaw = 180
+            _query.addQueryItem("yaw", str(_yaw))
             view_url = _qurl_cls.fromLocalFile(viewer_html)
             view_url.setQuery(_query)
             view.load(view_url)
@@ -829,6 +1010,10 @@ class PetWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._layout_vrm_view()
+        # 窗口尺寸一变就重算精灵位置。缺这一句的话，`apply_settings` 改
+        # ui.pet_size 后 `setFixedSize` 会触发本回调，但 pet_x/pet_y 仍是旧值 ——
+        # 精灵会重新贴到右下角、又被字幕条压住（就是修之前那个现象）。
+        self._relayout_pet()
 
     # ========== 拖拽 + 边缘吸附 ==========
 
@@ -846,7 +1031,7 @@ class PetWindow(QWidget):
         return screen.availableGeometry() if screen else QRect(0, 0, 1920, 1080)
 
     def _edge_snap(self):
-        """贴边吸附：窗口贴到屏幕边缘后隐藏，只留手柄"""
+        """贴边吸附：窗口贴到屏幕边缘后隐藏，只留手柄。仅左右边缘触发。"""
         geo = self._get_screen_geometry()
         x, y = self.x(), self.y()
         w, h = self.width(), self.height()
@@ -860,29 +1045,14 @@ class PetWindow(QWidget):
         elif x + w >= geo.right() - self.SNAP_DIST:
             self.move(geo.right() - self.HANDLE_SIZE, y)
             snapped = True
-        # 上边缘
-        if y <= geo.top() + self.SNAP_DIST:
-            self.move(self.x(), geo.top())
-            snapped = True
-        # 下边缘
-        elif y + h >= geo.bottom() - self.SNAP_DIST:
-            self.move(self.x(), geo.bottom() - h)
-            snapped = True
 
         if snapped:
+            self._is_snapped_state = True
             logger.debug(f"边缘吸附 → ({self.x()}, {self.y()})")
 
     def _is_edge_snapped(self) -> bool:
-        """检查是否处于贴边状态"""
-        geo = self._get_screen_geometry()
-        x, y = self.x(), self.y()
-        w, h = self.width(), self.height()
-        return (
-            x <= geo.left() + self.SNAP_DIST + 2
-            or x + w >= geo.right() - self.SNAP_DIST - 2
-            or y <= geo.top() + self.SNAP_DIST + 2
-            or y + h >= geo.bottom() - self.SNAP_DIST - 2
-        )
+        """检查是否处于贴边隐藏状态（只看标志，不靠位置判断）"""
+        return self._is_snapped_state
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -894,20 +1064,19 @@ class PetWindow(QWidget):
             # 记录按下信息（用于判断"点击打断"）
             self._press_time = time.time()
             self._press_pos = event.position()
-            # 使用 devicePixelAware 坐标，避免多屏 DPI 差异导致 offset 跳变
-            dpr = self.devicePixelRatioF()
-            global_pos = event.globalPosition()
-            self.drag_offset = QPoint(
-                int(global_pos.x() * dpr),
-                int(global_pos.y() * dpr),
-            )
+            # 记录鼠标全局位置 + 窗口当前位置，用于拖拽偏移
+            gp = event.globalPosition()
+            self._drag_mouse_start = QPoint(int(gp.x()), int(gp.y()))
+            self._drag_win_start = self.pos()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if self.dragging:
-            dpr = self.devicePixelRatioF()
-            new_x = int(event.globalPosition().x() * dpr) - self.drag_offset.x()
-            new_y = int(event.globalPosition().y() * dpr) - self.drag_offset.y()
+            gp = event.globalPosition()
+            dx = int(gp.x()) - self._drag_mouse_start.x()
+            dy = int(gp.y()) - self._drag_mouse_start.y()
+            new_x = self._drag_win_start.x() + dx
+            new_y = self._drag_win_start.y() + dy
             # 限制在屏幕范围内
             geo = self._get_screen_geometry()
             new_x = max(geo.left(), min(new_x, geo.right() - self.width()))
@@ -955,7 +1124,7 @@ class PetWindow(QWidget):
             event.accept()
 
     def _unsnap(self):
-        """从贴边状态弹出到正常位置"""
+        """从贴边状态弹出到正常位置（仅左右边缘贴边）"""
         geo = self._get_screen_geometry()
         x, y = self.x(), self.y()
         w, h = self.width(), self.height()
@@ -964,11 +1133,8 @@ class PetWindow(QWidget):
             x = geo.left() + 4
         elif x + w >= geo.right() - self.SNAP_DIST - 5:
             x = geo.right() - w - 4
-        if y <= geo.top() + self.SNAP_DIST + 5:
-            y = geo.top() + 4
-        elif y + h >= geo.bottom() - self.SNAP_DIST - 5:
-            y = geo.bottom() - h - 4
         self.move(x, y)
+        self._is_snapped_state = False
         logger.debug(f"取消贴边 → ({x}, {y})")
 
     # ========== 鼠标事件 ==========
@@ -994,10 +1160,49 @@ class PetWindow(QWidget):
                 logger.warning("麦克风不可用，无法常驻监听")
                 self._monitor_enabled = False
                 return False
-            # on_start：检测到语音起始时仅记录监听状态。
-            # 是否打断由录音结束后的 _on_speech_captured 声纹验证决定（保证只有用户声音能打断）。
+            # 每次启动监听都按 config 重新解析设备：用户可能刚改过
+            # voice.mic_device（多声源场景下必须能切换，不能只在进程启动时读一次）
+            try:
+                want = cm.get("voice.mic_device", None) if (self.app and getattr(self.app, "config_manager", None)) else None
+                if want is None or want == "":
+                    # ── 自动探测前等待 TTS 播完 ──
+                    # 启动时 TTS 在播报确认语/开场白，所有设备都拾取回声，
+                    # 此时探测 = 选到"回声最大的设备"而非"真正收人声的设备"。
+                    # 等播报结束 + 回声冷却后再探测，安静环境下才能分辨。
+                    wait_start = time.time()
+                    while getattr(self, "_speaking", False) and time.time() - wait_start < 10.0:
+                        time.sleep(0.2)
+                    # 额外等回声冷却（TTS 播完后扬声器残响 ~2s）
+                    cooldown_left = self._echo_cooldown_until - time.time()
+                    if cooldown_left > 0:
+                        logger.info("[mic] 等待回声冷却结束（%.1fs）再探测设备", cooldown_left)
+                        time.sleep(min(cooldown_left, 5.0))
+                    logger.info("[mic] TTS 已结束，开始自动探测设备")
+                    self._monitor_mic.set_input_device(None)
+                else:
+                    self._monitor_mic.set_input_device(want)
+            except Exception as e:
+                logger.warning("[mic] 应用 config 设备失败: %s", e)
+            dev = self.current_microphone_device()
+            if dev:
+                logger.info("[mic] 监听使用设备 idx=%d (%s)", dev["index"], dev["name"])
+            else:
+                logger.info("[mic] 监听使用系统默认输入设备")
+            # on_start：检测到语音起始时立即给出**视觉反馈**。
+            # ⚡ 延迟优化的关键一环：ASR 在本机 8 核 CPU 上要 3~5 秒，
+            #   用户在这几秒里看不到任何变化 → 感知是"她根本没听见"。
+            #   这里在**检测到声音的瞬间**就切 listen 动效 + 弹气泡，
+            #   把"有没有反应"和"反应内容"解耦：
+            #     · 有反应 = 检测到声音（<100ms，必然及时）
+            #     · 内容   = ASR + LLM 结果（3~6 秒，无法避免）
+            # 是否打断由录音结束后的 _on_speech_captured 声纹验证决定
+            # （保证只有用户声音能打断）。
             def _on_voice_start(vol):
                 self.set_state("listen")
+                # 只在"当前没有在播报、也没在处理"时弹气泡 ——
+                # 播报期间的气泡属于宠物自己说的话，不能被这里的提示顶掉。
+                if not self._speaking and not self._processing:
+                    self._show_listening_feedback()
                 # 不在语音起始就打断：避免宠物回声被误判为"用户开口"而立即误停。
                 # `_speaking` 期间麦克风拾到的起始大概率是宠物自己的声音，需等完整语音做声纹确认。
             ok = self._monitor_mic.listen_standby(
@@ -1025,6 +1230,124 @@ class PetWindow(QWidget):
             except Exception as e:
                 logger.error(f"停止监听失败: {e}")
 
+    # ========== 麦克风设备切换（多声源） ==========
+
+    def list_microphone_devices(self) -> list:
+        """列出所有输入设备（供设置界面/诊断使用）。"""
+        try:
+            from services.microphone_service import MicrophoneService
+            return MicrophoneService.list_input_devices()
+        except Exception as e:
+            logger.warning("[mic] 枚举设备失败: %s", e)
+            return []
+
+    def current_microphone_device(self):
+        """返回当前使用的设备信息（dict）或 None（自动挑选/不可用）。"""
+        try:
+            from services.microphone_service import MicrophoneService
+            mic = self._monitor_mic or get_microphone_service()
+            cur = mic._pick_mic_index()
+            if cur is None:
+                return None
+            for d in MicrophoneService.list_input_devices():
+                if d["index"] == cur:
+                    return d
+        except Exception as e:
+            logger.debug("[mic] 读取当前设备失败: %s", e)
+        return None
+
+    def switch_microphone(self, selector) -> bool:
+        """运行时切换输入设备（重启常驻监听使其生效）。
+
+        Args:
+            selector: int/数字字符串 → 设备索引；其他字符串 → 名字片段；
+                      None/"" /"auto" → 恢复自动挑选
+
+        Returns:
+            是否成功。成功后**自动重启监听**，无需重启应用。
+
+        多声源场景（本机麦克风 + 远程桌面虚拟麦克风）下，"自动挑选"可能选到
+        收不到用户声音的那个 —— 用本方法显式切换，或把选择写进
+        `config.yaml` 的 `voice.mic_device`。
+        """
+        if isinstance(selector, str) and selector.lower() in ("auto", "none", "null", ""):
+            selector = None
+        try:
+            mic = self._monitor_mic or get_microphone_service()
+        except Exception as e:
+            logger.error("[mic] 切换失败，麦克风服务不可用: %s", e)
+            return False
+
+        was_monitoring = self._monitor_enabled
+        # 先停监听：同一设备被两个流同时打开会失败
+        if was_monitoring:
+            self.stop_voice_monitor()
+            time.sleep(0.3)
+
+        ok = mic.set_input_device(selector)
+        if not ok:
+            # 切换失败：把监听恢复回原状，不留"监听已停"的副作用
+            if was_monitoring:
+                self.start_voice_monitor()
+            return False
+
+        # 写回配置，重启后仍生效
+        try:
+            if self.app and getattr(self.app, "config_manager", None):
+                self.app.config_manager.set("voice.mic_device", selector)
+        except Exception as e:
+            logger.warning("[mic] 写入 config 失败（仅本次生效）: %s", e)
+
+        if was_monitoring:
+            started = self.start_voice_monitor()
+            if not started:
+                logger.warning("[mic] 切换后监听重启失败")
+        dev = self.current_microphone_device()
+        if dev:
+            logger.info("[mic] 已切换到设备 idx=%d (%s)", dev["index"], dev["name"])
+            self.show_bubble("🎤 麦克风：%s" % dev["name"][:24], 2200)
+        return True
+
+    def probe_microphone_levels(self, seconds: float = 1.2) -> list:
+        """逐个设备短采样测音量，用于找出"哪个声源真的有声音"。"""
+        try:
+            mic = self._monitor_mic or get_microphone_service()
+            return mic.probe_device_levels(seconds=seconds)
+        except Exception as e:
+            logger.warning("[mic] 试听失败: %s", e)
+            return []
+
+    def cycle_microphone_device(self):
+        """热键回调：按顺序轮换到下一个输入设备（只轮换真实麦克风，跳过回环）。
+
+        多声源场景下用来快速试出"哪个设备能收到我的声音"：
+        每按一次切一个，并弹泡显示设备名。选到合适的之后，
+        用 `tools/list_mic_devices.py --set <idx>` 固化到配置。
+        """
+        try:
+            from services.microphone_service import MicrophoneService
+            devs = [d for d in MicrophoneService.list_input_devices()
+                    if d["kind"] == "mic"]
+            if not devs:
+                self.show_bubble("没有可用麦克风", 2000)
+                return
+            cur = self.current_microphone_device()
+            cur_idx = cur["index"] if cur else None
+            order = [d["index"] for d in devs]
+            if cur_idx in order:
+                nxt = order[(order.index(cur_idx) + 1) % len(order)]
+            else:
+                nxt = order[0]
+            if self.switch_microphone(nxt):
+                dev = self.current_microphone_device()
+                name = dev["name"][:20] if dev else str(nxt)
+                self.show_bubble("🎤 %s（%d/%d）" % (
+                    name, order.index(nxt) + 1, len(order)), 2500)
+                logger.info("[mic] 热键轮换 → idx=%d (%s)", nxt, name)
+        except Exception as e:
+            logger.error("[mic] 轮换设备失败: %s", e)
+
+
     def _on_speech_captured(self, wav_path: str):
         """监听捕获一次说话后的入口。
 
@@ -1044,8 +1367,16 @@ class PetWindow(QWidget):
             if self.app and getattr(self.app, "config_manager", None):
                 auto_interrupt = bool(self.app.config_manager.get("voice.auto_interrupt", False))
             if not auto_interrupt:
-                # 默认：宠物说话期间的语音不触发打断（交给用户主动 热键/点击），但也可入队备用
-                self._delete_wav(wav_path)
+                # 宠物说话期间捕获到语音：默认不打断，但**不再静默丢弃** ——
+                # 入待处理队列，等本轮播完立即处理。用户感知是"她说了但我打断不了"，
+                # 而不是"她完全没听见"（原实现直接删 wav，用户无从判断）
+                if len(self._pending_wavs) < 2:
+                    self._pending_wavs.append(wav_path)
+                    logger.info("[语音] 播报期间捕获语音，已入队 (len=%d)", len(self._pending_wavs))
+                    self._show_heard_feedback()
+                else:
+                    self._pending_wavs[0] = wav_path  # 覆盖最旧
+                    logger.info("[语音] 播报期间队列已满，覆盖最旧")
                 return
             # 防回声自触发：打断冷却期内丢弃，避免连环打断
             if time.time() < self._interrupt_block_until:
@@ -1064,6 +1395,12 @@ class PetWindow(QWidget):
                 except Exception as e:
                     logger.warning(f"打断失败: {e}")
             self._speaking = False
+            # 打断时恢复麦克风监听
+            if self._monitor_mic:
+                try:
+                    self._monitor_mic.resume_listening()
+                except Exception:
+                    pass
             # 冷却：防宠物自己的下一句回声立即再触发打断（死循环）
             self._interrupt_block_until = time.time() + 1.5
             # 用户打断的语音入队（最高优先），当前 pipeline 播完停止后由 _poll_pending 立即处理。
@@ -1088,6 +1425,39 @@ class PetWindow(QWidget):
             return
         # 空闲：立即处理
         self._start_pipeline(wav_path)
+
+    def _show_heard_feedback(self):
+        """视觉反馈：让用户知道"我听到了"。跨线程安全。"""
+        def _show():
+            try:
+                self.show_bubble("🎧 听到了…", 1500)
+            except Exception:
+                pass
+        self._invoke_on_main(_show)
+
+    def _show_listening_feedback(self):
+        """语音起始的即时反馈（<100ms 可见）。
+
+        ⚡ 与 `_show_heard_feedback` 的区别：
+        - 本方法在**检测到声音的瞬间**触发（录音还没结束、ASR 还没开始）
+        - `_show_heard_feedback` 在 ASR **识别出文本之后**触发
+
+        两者配合形成"两段式反馈"：先让用户知道"我在听了"，
+        再让用户知道"我听清了"。这解决了 ASR 慢导致的"看起来没反应"。
+
+        防抖：连续语音（用户停顿又接着说）不应反复刷新气泡。
+        """
+        now = time.time()
+        if now - getattr(self, "_last_listen_feedback", 0.0) < 2.0:
+            return
+        self._last_listen_feedback = now
+
+        def _show():
+            try:
+                self.show_bubble("🎧 在听…", 1200)
+            except Exception:
+                pass
+        self._invoke_on_main(_show)
 
     def _is_user_voice(self, wav_path: str) -> bool:
         """声纹验证：判断这段语音是否属于已 enroll 的用户。
@@ -1188,8 +1558,54 @@ class PetWindow(QWidget):
     def _start_pipeline(self, wav_path: str):
         """启动一次语音处理（进入 _processing）"""
         self._processing = True
+        # ⚡ 看门狗起点：记录进入处理态的时刻。
+        #   若任何阶段（ASR/LLM/TTS）卡死，_processing 会永久为 True，
+        #   之后所有语音都只入队不处理 —— 用户感知是"她彻底不理我了"。
+        #   `_tick` 里的看门狗据此强制解锁（见 _recover_stuck_processing）。
+        self._processing_since = time.time()
+        # ⚡ 立即暂停麦克风：ASR/LLM 期间麦克风在听 = TTS 回声持续触发假录音，
+        #   假录音堆积 → ASR 音频含回声 → 7 秒才识别完 → 用户感知延迟巨大。
+        if self._monitor_mic:
+            try:
+                self._monitor_mic.pause_listening()
+            except Exception:
+                pass
         import threading
         threading.Thread(target=self._voice_pipeline, args=(wav_path,), daemon=True).start()
+
+    def _recover_stuck_processing(self) -> bool:
+        """看门狗：处理态卡死超过上限则强制解锁。
+
+        Returns:
+            True = 本次执行了强制解锁
+        """
+        limit = getattr(self, "_processing_watchdog_sec", 45.0)
+        since = getattr(self, "_processing_since", 0.0)
+        if not self._processing or not since:
+            return False
+        age = time.time() - since
+        if age <= limit:
+            return False
+
+        logger.warning(
+            "[看门狗] 处理态已卡住 %.0f 秒（上限 %.0f 秒），强制解锁并给出提示",
+            age, limit
+        )
+        self._processing = False
+        self._processing_since = 0.0
+        self._agent_busy = False
+        self._agent_busy_since = 0.0
+        # 顺手清掉待处理队列：这些语音已经太旧，播出去也是答非所问
+        for w in list(self._pending_wavs):
+            self._delete_wav(w)
+        self._pending_wavs.clear()
+        # 让用户知道发生了什么（沉默失败是最糟的失败）
+        self.set_state("idle")
+        try:
+            self.show_bubble("刚才有点卡住了，再说一次好吗？", 2500)
+        except Exception:
+            pass
+        return True
 
     def _poll_pending(self):
         """处理完当前语音后，取出待处理队列中的下一条继续处理"""
@@ -1223,15 +1639,34 @@ class PetWindow(QWidget):
         if _sys.is_finalizing():
             logger.debug("[voice] 解释器关闭中，跳过播报")
             return
+        _paused_mic = False
+        # 本次播报的代数：只有"我自己是最新一代"时才允许恢复麦克风。
+        # 见 __init__ 里 _speak_generation 的注释（ack→result→refine 连续播报的场景）。
+        self._speak_generation += 1
+        _my_generation = self._speak_generation
         try:
             import threading
             import queue as _queue
             import concurrent.futures
 
+            # ★ 播报一开始立即暂停麦克风（防回声）—— 不等 _player 循环，
+            # 因为第一句合成完就立即播放，mic 线程可能已经在拾 TTS 余音了。
+            # ⚠️ 由下面的 finally 兜底恢复：本函数有多条提前 return / 异常出口，
+            #    漏掉任何一个都会让麦克风**永久停在暂停状态** ——
+            #    用户感知就是"完全没反应"（实测踩过）。
+            if self._monitor_mic:
+                try:
+                    self._monitor_mic.pause_listening()
+                    _paused_mic = True
+                except Exception:
+                    pass
+
             # 队列项：(audio, text)。携带文本以便播放时逐句动态更新字幕
             audio_queue = _queue.Queue()
             # 逐句情绪索引：播放线程按此索引从 _sentence_emotions 取对应情绪
             self._sentence_idx = 0
+            # 本次播报起始时刻（收尾时用来算"说了多久"→ 回声窗口长度）
+            t_speak_start = time.time()
 
             # 播放线程：顺序播放音频块（阻塞式）
             # 字幕与音频同步：每句开播前更新为该句文本（字幕逐句滚动），
@@ -1255,8 +1690,7 @@ class PetWindow(QWidget):
                         # 全部播完：字幕再停留一会儿（若正在显示说话文本）
                         if self.bubble_text:
                             self.bubble_timer = 2500
-                        break
-                    # 退出时跳过播放
+                        break                    # 退出时跳过播放
                     if not self.app or not getattr(self.app, '_running', True):
                         break
                     # 静音后立即停止，丢弃剩余队列（避免继续播）
@@ -1275,13 +1709,15 @@ class PetWindow(QWidget):
                         show_dur = max(2500, int(len(text) / 4.0 * 1000) + 500)
                         self.show_bubble(text, show_dur)
 
-                    # ── 逐句情绪动效切换 ──
+                    # ── 逐句情绪动效切换（跨线程安全） ──
                     if self._sentence_emotions and self._sentence_idx < len(self._sentence_emotions):
                         sent_emotion = self._sentence_emotions[self._sentence_idx]
                         if sent_emotion and sent_emotion != "talk":
-                            # 播放该句时切换到对应情绪动效
-                            self.anim_controller.set_state(sent_emotion)
-                            self._forward_vrm_state(sent_emotion)
+                            # 播放该句时切换到对应情绪动效（转主线程执行）
+                            def _set_emotion(em=sent_emotion):
+                                self.anim_controller.set_state(em)
+                                self._forward_vrm_state(em)
+                            self._invoke_on_main(_set_emotion)
                             logger.debug("[emotion] 逐句动效: [%d] %s", self._sentence_idx, sent_emotion)
                     self._sentence_idx += 1
                     # 半双工：正在播放视为"宠物在说话"，捕获的拾音是自己的声音 → 丢弃
@@ -1349,9 +1785,56 @@ class PetWindow(QWidget):
 
             audio_queue.put(None)
             player_thread.join()
+            # 记录本次播报实际时长：用于把回声屏蔽窗口按"她说了多久"放大
+            # （固定 4 秒挡不住一段 15 秒长回复的余音 + 房间混响）
+            try:
+                self._last_speech_duration = max(0.0, time.time() - t_speak_start)
+            except Exception:
+                self._last_speech_duration = 0.0
+            # 播报结束：处理播报期间被排队的用户语音（否则会一直躺在队列里没人取）
+            try:
+                self._poll_pending()
+            except Exception as e:
+                logger.warning("[voice] 播报结束后取出待处理语音失败: %s", e)
 
         except Exception as e:
             logger.error(f"按句播报失败: {e}")
+        finally:
+            # ★ 兜底恢复麦克风：无论正常播完、提前 return 还是异常，
+            #   都必须恢复监听，否则用户感知是"完全没反应"。
+            #   延迟 1.5s 是为了让扬声器余音/房间混响先散掉。
+            #
+            # ⚠️ 代数守卫（根因修复）：一次交互会连续触发多次播报
+            #    （ack → result → refine），每次播报都在这里起一个 1.5s 延迟
+            #    恢复线程。若不加守卫，**先起的那个会在后续播报还在说话时
+            #    把麦克风打开** → 拾到 TTS 回声 → 触发假录音 + 冷却期
+            #    → 用户真实说话被挡掉，感知即"她听不见我说话了"。
+            #    判据：只有仍是最新一次播报（_my_generation == 当前代数）
+            #    且此刻确实没在播报时，才真正恢复。
+            if _paused_mic and self._monitor_mic:
+                try:
+                    import threading as _th
+                    import time as _t
+
+                    def _resume_later():
+                        _t.sleep(0.8)
+                        # 期间又开了新一轮播报 → 交给那一轮负责恢复
+                        if _my_generation != self._speak_generation:
+                            logger.debug(
+                                "[mic] 播报代数已更新(%d→%d)，本轮不恢复麦克风",
+                                _my_generation, self._speak_generation)
+                            return
+                        # 仍在播报（理论上不会，防御性检查）→ 不恢复
+                        if self._speaking:
+                            logger.debug("[mic] 仍在播报中，跳过本轮恢复")
+                            return
+                        try:
+                            self._monitor_mic.resume_listening()
+                        except Exception as _e:
+                            logger.warning("[mic] 恢复监听失败: %s", _e)
+                    _th.Thread(target=_resume_later, daemon=True).start()
+                except Exception as e:
+                    logger.warning("[voice] 恢复麦克风失败: %s", e)
 
     def _voice_pipeline(self, wav_path: str):
         """语音交互链路：识别→流式对话→按句播报（监听回调版本）
@@ -1360,11 +1843,26 @@ class PetWindow(QWidget):
         避免在已打断后仍执行耗时操作（如LLM请求/TTS合成）。
         """
         try:
+            # ⚠️ 关键：进入新一次语音处理时**先清掉上一轮的打断标志**。
+            # 该标志由点击宠物 / Ctrl+Alt+D 置 True，而唯一的清除点在播放循环
+            # 内部（`_speak_sentences` 的每句播放前）。于是出现这个死局：
+            #   点击一次宠物（当时没在播放）→ 标志永远停在 True
+            #   → 之后每段语音都撞上 "ASR后检测到打断，跳过后续处理"
+            #   → 用户看到的现象是"麦克风有反应，但永远不回应"。
+            # 语义上，用户重新开口本身就意味着"新的对话开始"，旧打断不应继续生效。
+            if self.app and hasattr(self.app, "_interrupt_requested"):
+                self.app._interrupt_requested = False
             self.set_state("listen")
+            # ⚡ ASR 期间可打断：记录当前识别对应的"代数"，
+            #   打断回调会据此调用 ASR 的 request_cancel()，
+            #   让还在烧 CPU 的识别立刻停下（不然用户点了打断还得等 3~5 秒）。
+            _asr_t0 = time.perf_counter()
             text = self.app.transcribe(wav_path) if self.app else None
-            # ASR后检查打断（用户可能在识别期间按了打断）
+            _asr_ms = (time.perf_counter() - _asr_t0) * 1000.0
+            logger.info("[voice] ASR 耗时 %.0fms", _asr_ms)
+            # ASR后检查打断（用户可能在**本次识别期间**按了打断）
             if self.app and getattr(self.app, "_interrupt_requested", False):
-                logger.info("[voice] ASR后检测到打断，跳过后续处理")
+                logger.info("[voice] ASR后检测到打断，跳过后续处理（ASR 耗时 %.0fms）", _asr_ms)
                 return
             if not text or self._should_ignore(text):
                 self._handle_invalid()
@@ -1388,6 +1886,7 @@ class PetWindow(QWidget):
 
                 request_id = new_request_id()
                 self._agent_busy = True
+                self._agent_busy_since = time.time()
                 logger.info("[agent] 语音交给 Agent 层处理 (rid=%s)", request_id)
                 self.app.agent_stack.bus.emit(
                     EventTypes.SPEECH_RECOGNIZED,
@@ -1406,7 +1905,23 @@ class PetWindow(QWidget):
             self.set_state("idle")
         finally:
             self._processing = False
+            # 正常收尾 → 归零看门狗起点，避免下一轮被上一轮的旧时刻误判为"卡住"
+            self._processing_since = 0.0
             self._delete_wav(wav_path)
+            # ⚡ 兜底恢复麦克风：ASR 失败 / 空文本 / 噪音判定时，
+            #   _start_pipeline 暂停了麦克风但没有任何播报路径来恢复它。
+            #   播报路径（_speak_sentences）内部会再暂停一次，
+            #   所以这里的恢复不会与播报冲突 —— 即使竞态也只是短暂闪开。
+            if self._monitor_mic and not self._speaking:
+                try:
+                    import time as _t
+                    def _safe_resume():
+                        _t.sleep(0.3)  # 短暂延迟，让播报路径有机会先暂停
+                        if not self._speaking and not self._processing:
+                            self._monitor_mic.resume_listening()
+                    threading.Thread(target=_safe_resume, daemon=True).start()
+                except Exception:
+                    pass
             # 处理完当前语音后，取待处理队列中的下一条继续（连说不再被丢）
             try:
                 self._poll_pending()
@@ -1475,13 +1990,9 @@ class PetWindow(QWidget):
                     logger.info("[voice] 已静音，跳过语音输出")
                 else:
                     self._speak_sentences(sentences)
-                cooldown = 3.0
-                if getattr(self.app, "config_manager", None):
-                    cooldown = float(self.app.config_manager.get("voice.echo_cooldown", 3.0))
-                # 第2层：冷却从播放结束起算；并额外加一段"残响屏蔽窗口"（播放后 ~1s 内拾音视为回声）
-                tail = 1.0
-                self._echo_cooldown_until = time.time() + cooldown + tail
-                self._echo_tail_until = time.time() + tail
+                # 第2层：冷却从**播放结束**起算（本方法会阻塞到播完），
+                # 再额外加一段"残响屏蔽窗口"（播放后 ~1s 内拾音视为回声）
+                self._arm_echo_guard()
             self.set_state("idle")
         except Exception as e:
             logger.error(f"LLM 回复链路失败: {e}")
@@ -1789,7 +2300,14 @@ class PetWindow(QWidget):
             except Exception as e:
                 logger.warning(f"打断播放失败: {e}")
 
-        # 2. 清空待处理语音队列（避免排队的旧语音被处理）
+        # 2. 取消正在进行的 ASR 识别（⚡ 延迟优化关键点）
+        #    场景：用户说完 → ASR 正在烧 CPU（本机 3~5 秒）→ 用户按打断。
+        #    旧行为：打断只重置状态，ASR 仍跑完（用户白等几秒），
+        #            跑完后才撞上打断检查被丢弃 —— 感知就是"点了没反应"。
+        #    新行为：立刻通知 ASR 中止解码，它会在片段迭代之间退出。
+        self._cancel_active_asr()
+
+        # 3. 清空待处理语音队列（避免排队的旧语音被处理）
         queue_len = len(self._pending_wavs)
         if queue_len > 0:
             for w in self._pending_wavs:
@@ -1797,27 +2315,48 @@ class PetWindow(QWidget):
             self._pending_wavs.clear()
             logger.info(f"[打断] 已清空 {queue_len} 条待处理语音")
 
-        # 3. 重置处理状态（让pipeline线程自然结束，不阻塞新语音输入）
+        # 4. 重置处理状态（让pipeline线程自然结束，不阻塞新语音输入）
         if self._processing:
             logger.info("[打断] 重置处理状态，pipeline线程将自然结束")
             self._processing = False
+        self._processing_since = 0.0
 
-        # 4. 重置冷却计时器（立即可接受新语音）
+        # 5. 重置冷却计时器（立即可接受新语音）
         self._echo_cooldown_until = 0.0
         self._echo_tail_until = 0.0
 
-        # 5. 显示打断反馈（保护期内不被tick清除）
+        # 6. 显示打断反馈（保护期内不被tick清除）
         if was_speaking:
             self.show_bubble("🛑 已停止，请说~", 2500)
         else:
             self.show_bubble("🎤 好的，请说~", 2000)
         self._interrupt_active_until = time.time() + 2.0
 
-        # 6. 触发动效反馈（被打断 → 惊讶/生气）
+        # 7. 触发动效反馈（被打断 → 惊讶/生气）
         interrupt_state = self.state_machine.on_interrupt()
         self.anim_controller.set_state(interrupt_state)
         self._forward_vrm_state(interrupt_state)
         logger.info("[打断] 触发动效: %s", interrupt_state)
+
+    def _cancel_active_asr(self) -> None:
+        """请求中止正在进行的 ASR 识别（尽力而为，不抛异常）。
+
+        为什么单独抽一个方法：ASR 插件的获取方式有两处可能（app.get_plugin），
+        且打断路径**绝不能因为拿不到插件就中断** —— 打断本身必须永远成功。
+        """
+        if not self.app or not hasattr(self.app, "get_plugin"):
+            return
+        try:
+            asr = self.app.get_plugin("ASREngine")
+            if asr is None:
+                return
+            cancel = getattr(asr, "request_cancel", None)
+            if callable(cancel):
+                cancel()
+                logger.info("[打断] 已请求中止 ASR 识别")
+        except Exception as e:
+            # 打断路径不因取插件失败而中断：记 warning 即可
+            logger.warning("[打断] 请求中止 ASR 失败: %s", e)
 
     def _show_status(self):
         """显示当前状态信息"""
@@ -1878,7 +2417,10 @@ class PetWindow(QWidget):
                 window_flags |= Qt.WindowStaysOnTopHint
             else:
                 window_flags &= ~Qt.WindowStaysOnTopHint
+            # setWindowFlags 会重建窗口句柄，位置会丢失 → 先保存后恢复
+            saved_pos = self.pos()
             self.setWindowFlags(window_flags)
+            self.move(saved_pos)
             self.show()
             # 3. 热键重注册
             self.rebind_hotkey()
@@ -1891,7 +2433,16 @@ class PetWindow(QWidget):
                 size = 300
             if 100 <= size <= 400 and self._pet_size != size:
                 self._pet_size = size
-                self.setFixedSize(size + 100, size + 100)
+                # 按**精灵自身的宽高比**算高，不能写死正方形。
+                # 非方形画布（全身立绘 128×289）若被塞进正方形窗口：
+                #   窗口高 227 < 画布高 289 ⇒ 角色从 y=0 画起、**脚被裁掉**，
+                #   而 44px 字幕条又落在 y[186..221] ⇒ 重新压回角色身上
+                #   （就是 `_relayout_pet` 修掉的那个现象，从另一条路径复发）。
+                # 改配置 `ui.pet_size` 调的是**画布宽**，高跟着比例走。
+                cw, ch = self.anim_controller.get_size()
+                ratio = (ch / cw) if cw else 1.0
+                self.setFixedSize(size + 100,
+                                  max(1, int(round(size * ratio))) + 100)
             # 6. 宠物名字（热更新：窗口标题 + LLM 人设）
             try:
                 pet_name = str(cm.get("app.name", "欣雅") or "欣雅").strip() or "欣雅"
@@ -1950,6 +2501,11 @@ class PetWindow(QWidget):
             if hasattr(self, "interrupt_current_speech"):
                 if not hk.register_extra(intr_combo, self.interrupt_current_speech):
                     logger.warning(f"打断热键 {intr_combo} 注册失败")
+            # 额外：轮换麦克风设备（多声源场景快速试哪个能收到声音）
+            mic_combo = cm.get("voice.hotkey_mic_next", "Ctrl+Alt+N")
+            if hasattr(self, "cycle_microphone_device"):
+                if not hk.register_extra(mic_combo, self.cycle_microphone_device):
+                    logger.warning(f"切换麦克风热键 {mic_combo} 注册失败")
         except Exception as e:
             logger.warning(f"重绑热键失败: {e}")
 
@@ -1993,10 +2549,10 @@ class PetWindow(QWidget):
                 if enabled:
                     import sys, os
                     exe = sys.executable if getattr(sys, "frozen", False) else f'"{sys.executable}" "{os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "run.py"))}"'
-                    winreg.SetValueEx(k, "XiaoYiPet", 0, winreg.REG_SZ, exe)
+                    winreg.SetValueEx(k, "xbyaPet", 0, winreg.REG_SZ, exe)
                 else:
                     try:
-                        winreg.DeleteValue(k, "XiaoYiPet")
+                        winreg.DeleteValue(k, "xbyaPet")
                     except FileNotFoundError:
                         pass
         except Exception as e:

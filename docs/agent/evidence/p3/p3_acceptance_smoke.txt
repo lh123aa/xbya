@@ -1,4 +1,4 @@
-﻿python : [safety] 拒绝白名单外路径: C:\Windows\System32
+python : [safety] 拒绝白名单外路径: C:\Windows\System32
 At line:2 char:1
 + python -X utf8 tools\p3_acceptance_smoke.py 2>&1 | Out-File -Encoding ...
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

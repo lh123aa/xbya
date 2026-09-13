@@ -51,7 +51,7 @@ def main() -> int:
     print("=" * 70)
 
     # ── 1. 用真实配置装配 ──
-    sandbox = Path(tempfile.mkdtemp(prefix="xiaoyi_accept_"))
+    sandbox = Path(tempfile.mkdtemp(prefix="xbya_accept_"))
     (sandbox / "合同_2025.pdf").write_text("dummy")
     (sandbox / "截图_01.png").write_text("dummy")
     (sandbox / "笔记.txt").write_text("hello agent")

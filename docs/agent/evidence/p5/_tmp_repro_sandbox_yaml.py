@@ -12,7 +12,7 @@ r"""★ 复盘：**沙箱准备脚本自己把 config.yaml 写坏了**，然后�
      `init` 往白名单那行写了什么。
 
 关键：YAML 的**双引号标量里，反斜杠是转义符**。
-`init` 写入的是 `"C:\Users\49060\AppData\Local\Temp\xiaoyi_manual\Desktop"`，
+`init` 写入的是 `"C:\Users\49060\AppData\Local\Temp\xbya_manual\Desktop"`，
 其中 `\U` 被当成 Unicode 转义的开头 → `expected escape sequence of 8
 hexadecimal numbers` —— **与日志里的报错逐字一致**。
 

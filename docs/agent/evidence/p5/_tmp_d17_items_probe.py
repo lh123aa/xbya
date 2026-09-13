@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 from agent.providers.safety.basic_guard import BasicGuard                  # noqa: E402
 from agent.tools.file_tools import FileDeleteTool                          # noqa: E402
 
-sandbox = Path(tempfile.mkdtemp(prefix="xiaoyi_d17_"))
+sandbox = Path(tempfile.mkdtemp(prefix="xbya_d17_"))
 (sandbox / "a.txt").write_text("A", encoding="utf-8")
 (sandbox / "b.txt").write_text("B", encoding="utf-8")
 

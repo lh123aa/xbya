@@ -95,7 +95,7 @@ def render(path, out, yaw_deg=0.0, height=600):
     print("Saved", out, img.size)
 
 if __name__ == "__main__":
-    p = sys.argv[1] if len(sys.argv)>1 else r'E:\程序\桌面宠物\xiaoyi-vrm-worktree\assets\vrm\chibi.vrm'
-    out = sys.argv[2] if len(sys.argv)>2 else r'E:\程序\桌面宠物\xiaoyi-vrm-worktree\_preview_front.png'
+    p = sys.argv[1] if len(sys.argv)>1 else r'E:\程序\桌面宠物\xbya-vrm-worktree\assets\vrm\chibi.vrm'
+    out = sys.argv[2] if len(sys.argv)>2 else r'E:\程序\桌面宠物\xbya-vrm-worktree\_preview_front.png'
     yaw = float(sys.argv[3]) if len(sys.argv)>3 else 0.0
     render(p, out, yaw)

@@ -85,10 +85,10 @@ def main() -> int:
     logging.getLogger().addHandler(quota)
     logging.getLogger().setLevel(logging.WARNING)
 
-    from core.app import XiaoyiApp
+    from core.app import xbyaApp
 
     t0 = time.perf_counter()
-    app = XiaoyiApp()
+    app = xbyaApp()
     ok_init = app.initialize()
     print(f"\n应用初始化: {ok_init}  ({(time.perf_counter()-t0):.1f}s)")
     check(ok_init, "应用初始化成功")

@@ -82,6 +82,9 @@ class UniversalLLM(LLMEngine):
         base_url: str = None,
         provider: str = None,
         system_prompt: str = None,
+        reply_style: str = "concise",
+        system_prompt_concise: str = None,
+        system_prompt_detailed: str = None,
         #: 单次补全的最大 token 数。
         #:
         #: 默认从 1024 提到 1536 的原因：**规划器要把整个 JSON 计划一次吐完**，
@@ -124,7 +127,15 @@ class UniversalLLM(LLMEngine):
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
         self.model = model or "gpt-3.5-turbo"
-        self.system_prompt = system_prompt or "你是欣雅，一个友善的AI桌面管家。"
+        # 根据 reply_style 选择对应 system_prompt
+        if reply_style == "detailed" and system_prompt_detailed:
+            self.system_prompt = system_prompt_detailed
+        elif reply_style == "concise" and system_prompt_concise:
+            self.system_prompt = system_prompt_concise
+        else:
+            self.system_prompt = system_prompt or "你是欣雅，一个友善的AI桌面管家。"
+        self.reply_style = reply_style
+        logger.info(f"LLM 回复风格: {reply_style}")
         # 备用提供商（429 限流自动降级）
         self.fallback_api_key = fallback_api_key or ""
         self.fallback_base_url = (fallback_base_url or "").rstrip("/")
@@ -209,6 +220,78 @@ class UniversalLLM(LLMEngine):
 
         except Exception as e:
             logger.error(f"对话失败: {e}")
+            return None
+
+    def chat_stream(self, prompt: str, context=None):
+        """流式对话（SSE），按中文标点切句返回列表。
+        与 openai_api 插件同构，用于 LLM→TTS 管线首句即播。
+        """
+        if not self._available:
+            return None
+        try:
+            import json as _json
+            messages = []
+            if self.system_prompt:
+                messages.append({"role": "system", "content": self.system_prompt})
+            if context:
+                for msg in context:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": "user", "content": prompt})
+
+            url = f"{self.base_url}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "stream": True,
+            }
+            import requests as _req
+            r = _req.post(url, headers=headers, json=payload, stream=True, timeout=30)
+            if r.status_code != 200:
+                logger.error(f"LLM 流式请求失败: {r.status_code} {r.text[:200]}")
+                # 降级到非流式
+                return self._fallback_stream(messages)
+            full = []
+            for line in r.iter_lines(decode_unicode=True):
+                if not line or not line.strip():
+                    continue
+                if line.startswith("data:"):
+                    line = line[len("data:"):].strip()
+                if line == "[DONE]":
+                    break
+                try:
+                    obj = _json.loads(line)
+                except (_json.JSONDecodeError, ValueError):
+                    continue
+                choices = obj.get("choices")
+                if not choices:
+                    continue
+                content = choices[0].get("delta", {}).get("content", "")
+                if content:
+                    full.append(content)
+            text = "".join(full).strip()
+            if not text:
+                return None
+            from core.text_utils import split_sentences
+            return split_sentences(text)
+        except Exception as e:
+            logger.error(f"LLM 流式请求异常: {e}")
+            return None
+
+    def _fallback_stream(self, messages):
+        """流式失败时降级到非流式"""
+        try:
+            result = self._call_api(messages)
+            if not result:
+                return None
+            from core.text_utils import split_sentences
+            return split_sentences(result)
+        except Exception:
             return None
 
     def generate(self, prompt: str, max_tokens: int = 1024) -> Optional[str]:

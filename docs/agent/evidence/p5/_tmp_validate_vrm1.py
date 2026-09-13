@@ -19,7 +19,7 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
-TARGET = ROOT / "assets" / "vrm" / "xiaoyi_from_photo.vrm"
+TARGET = ROOT / "assets" / "vrm" / "xbya_from_photo.vrm"
 
 raw = TARGET.read_bytes()
 clen, ctype = struct.unpack_from("<II", raw, 12)

@@ -69,6 +69,63 @@ def wait_until():
 
 
 # ══════════════════════════════════════════════════════
+#  真实 config.yaml 保护（防测试污染用户配置）
+# ══════════════════════════════════════════════════════
+
+#: 会话开始时真实 config.yaml 的快照（字节）
+_REAL_CONFIG = PROJECT_ROOT / "config.yaml"
+_config_snapshot: bytes | None = None
+
+
+def pytest_sessionstart(session):
+    """测试开始前快照真实 config.yaml。
+
+    背景（实测踩到）：多个用例直接对**真实** config.yaml 调用
+    `set_performance_mode(...)`，而该调用会立刻落盘，且会连带改写
+    `plugins.asr.params.model_size`。某些用例的 `finally` 还原
+    在节流窗口内没落盘 → 用户配置被永久改成测试值：
+      system.performance_mode: low → high
+      plugins.asr.params.model_size: base → small
+    表现是 ASR 每次识别慢 3 倍（3.5s vs 1.2s），
+    而所有日志看起来都正常 —— 典型的静默劣化。
+
+    这里做两件事：会话开始快照、会话结束比对并**自动还原**。
+    """
+    global _config_snapshot
+    try:
+        if _REAL_CONFIG.is_file():
+            _config_snapshot = _REAL_CONFIG.read_bytes()
+    except OSError as e:
+        logger.warning("[conftest] 无法快照 config.yaml: %s", e)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """测试结束后若真实 config.yaml 被改动，还原并醒目报告。"""
+    if _config_snapshot is None:
+        return
+    try:
+        if not _REAL_CONFIG.is_file():
+            return
+        now = _REAL_CONFIG.read_bytes()
+        if now == _config_snapshot:
+            return
+        # 被改动了：还原 + 报告（不能静默还原 —— 那等于把测试污染藏起来）
+        _REAL_CONFIG.write_bytes(_config_snapshot)
+        logger.error(
+            "[conftest] ⚠️ 测试污染了真实 config.yaml，已自动还原。"
+            "请把相关用例改用 tmp_path 隔离配置。"
+        )
+        print(
+            "\n[conftest] ⚠️ 检测到测试改写了真实 config.yaml，已自动还原。\n"
+            "            请把相关用例改用 tmp_path 隔离配置"
+            "（本次未还原会让 ASR 模型档位被永久改动）。\n",
+            file=sys.stderr,
+        )
+    except OSError as e:
+        logger.warning("[conftest] 还原 config.yaml 失败: %s", e)
+
+
+# ══════════════════════════════════════════════════════
 #  会话级收尾（技术债 D7）
 # ══════════════════════════════════════════════════════
 

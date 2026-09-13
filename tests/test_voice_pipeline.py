@@ -21,7 +21,7 @@ def qapp():
 
 
 class FakeApp:
-    """假的 XiaoyiApp：记录调用"""
+    """假的 xbyaApp：记录调用"""
 
     def __init__(self):
         self.calls = []

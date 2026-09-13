@@ -62,7 +62,7 @@ def capture(hwnd, out):
 
 if __name__ == "__main__":
     hwnd = int(sys.argv[1]) if len(sys.argv) > 1 else find_pet()
-    out = sys.argv[2] if len(sys.argv) > 2 else "E:/程序/桌面宠物/xiaoyi-vrm-worktree/_pet_window.png"
+    out = sys.argv[2] if len(sys.argv) > 2 else "E:/程序/桌面宠物/xbya-vrm-worktree/_pet_window.png"
     if not hwnd:
         print("no hwnd"); sys.exit(1)
     capture(hwnd, out)

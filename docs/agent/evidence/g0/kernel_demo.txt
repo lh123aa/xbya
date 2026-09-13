@@ -1,11 +1,11 @@
 # 命令: python docs/agent/examples/kernel_demo.py
 # 日期: 2026-09-10 18:58:07
-# 工作目录: E:\程序\桌面宠物\xiaoyi-vrm-worktree
+# 工作目录: E:\程序\桌面宠物\xbya-vrm-worktree
 # Python: 3.12.8（pytest 9.0.3 / coverage 7.16.0）
 # 退出码: 0
 
 欣雅插件内核 core/kernel 能力演示
-仓库根目录：E:\程序\桌面宠物\xiaoyi-vrm-worktree
+仓库根目录：E:\程序\桌面宠物\xbya-vrm-worktree
 Python：3.12.8    标准库 + core/kernel，无第三方依赖
 说明：每节都做真实断言，任一断言不成立则退出码为 1。
 

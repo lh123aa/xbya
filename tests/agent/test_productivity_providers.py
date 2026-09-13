@@ -794,7 +794,7 @@ def _ctx(**services):
     """假上下文：预置若干服务；没预置的就是"没人提供"
 
     （与 `tests/agent/test_plugins.py` 一致：直接 `Context()` + `provide()`
-    拼一个最小上下文，不 new 真实的 `XiaoyiApp`。）
+    拼一个最小上下文，不 new 真实的 `xbyaApp`。）
     """
     ctx = Context()
     for name, value in services.items():

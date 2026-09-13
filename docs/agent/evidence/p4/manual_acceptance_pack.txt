@@ -50,9 +50,9 @@ P4-A3 证据：人工验收执行包（包本身的自检 + 当前状态）
 【二】沙箱状态（`prepare_manual_acceptance.py status`）
 --------------------------------------------------------------
 沙箱模式: 关
-配置文件  : E:\程序\桌面宠物\xiaoyi-vrm-worktree\config.yaml
+配置文件  : E:\程序\桌面宠物\xbya-vrm-worktree\config.yaml
 备份存在  : False
-沙箱存在  : False  (C:\Users\49046\AppData\Local\Temp\xiaoyi_manual)
+沙箱存在  : False  (C:\Users\49046\AppData\Local\Temp\xbya_manual)
 白名单行  : path_whitelist: []
 
 【三】校验器自检（证明它不会把"没做"读成"通过"）

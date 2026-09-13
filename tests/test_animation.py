@@ -608,12 +608,12 @@ class TestAnimationControllerCache:
         assert img2 is not img1
 
     def test_update_invalidates_cache(self):
-        """update后缓存失效"""
+        """update后缓存失效（delta 必须跨帧边界：1/fps ≈ 0.083s @12fps）"""
         ctrl = AnimationController(self.test_dir)
         ctrl.load_pet("cat")
         ctrl.composite()
         assert ctrl._cached_frame is not None
-        ctrl.update(0.016)
+        ctrl.update(0.1)  # > 1/12 ≈ 0.083 → 跨帧，frame_changed=True
         assert ctrl._cached_frame is None
         assert ctrl._cache_key is None
 

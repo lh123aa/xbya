@@ -83,7 +83,7 @@ def _safe_hasattr(obj: Any, name: str) -> bool:
         return False
 
 
-class XiaoyiApp:
+class xbyaApp:
     """小忆应用主控类"""
     
     def __init__(self, config_path: str = "config.yaml"):
@@ -698,6 +698,17 @@ class XiaoyiApp:
             # 启动常驻语音监听
             if hasattr(pet_window, "start_voice_monitor"):
                 pet_window.start_voice_monitor()
+
+            # ⚡ 延迟优化：后台预热 ASR 模型。
+            # 原先模型在**首次 transcribe 时**才加载 —— 用户说的第一句话要
+            # 额外干等 ~2 秒模型加载，感知就是"她怎么半天没反应"。
+            # 放到启动阶段后台加载，第一次说话直接进识别。
+            try:
+                _asr = self.get_plugin("ASREngine")
+                if _asr is not None and hasattr(_asr, "warm_up_async"):
+                    _asr.warm_up_async()
+            except Exception as e:
+                logger.warning("ASR 预热启动失败（不影响功能）: %s", e)
             
             # 注册全局热键
             if hasattr(pet_window, "toggle_voice_monitor"):
@@ -851,6 +862,13 @@ class XiaoyiApp:
         # 停止文件监控
         self.stop_file_monitor()
 
+        # 落盘被节流窗口暂缓的配置改动（否则退出前最后几秒改的设置会丢）
+        try:
+            if self.config_manager is not None and hasattr(self.config_manager, "flush"):
+                self.config_manager.flush()
+        except Exception as e:
+            logger.warning("退出前落盘配置失败: %s", e)
+
         logger.info("小忆应用已关闭")
     
     def llm_capability(self) -> Dict[str, Any]:
@@ -1003,12 +1021,12 @@ class XiaoyiApp:
 
 
 # 全局应用实例
-_app: Optional[XiaoyiApp] = None
+_app: Optional[xbyaApp] = None
 
 
-def get_app(config_path: str = "config.yaml") -> XiaoyiApp:
+def get_app(config_path: str = "config.yaml") -> xbyaApp:
     """获取应用单例"""
     global _app
     if _app is None:
-        _app = XiaoyiApp(config_path)
+        _app = xbyaApp(config_path)
     return _app

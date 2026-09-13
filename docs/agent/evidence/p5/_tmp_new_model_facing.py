@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""确认 `xiaoyi_from_photo.vrm` 的**正面朝哪边** —— 决定 `ui.vrm_yaw_deg` 该填多少。
+r"""确认 `xbya_from_photo.vrm` 的**正面朝哪边** —— 决定 `ui.vrm_yaw_deg` 该填多少。
 
 判据（两条，互相印证）：
   1. **眼骨位置**：VRM 里 `leftEye`/`rightEye` 的 translation.z。
@@ -15,7 +15,7 @@ import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
-raw = (ROOT / "assets" / "vrm" / "xiaoyi_from_photo.vrm").read_bytes()
+raw = (ROOT / "assets" / "vrm" / "xbya_from_photo.vrm").read_bytes()
 clen, ctype = struct.unpack_from("<II", raw, 12)
 g = json.loads(raw[20:20 + clen].decode("utf-8"))
 nodes = g["nodes"]

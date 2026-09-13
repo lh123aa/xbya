@@ -36,6 +36,8 @@ class AnimationController:
         # 脏帧缓存：状态/动画时间不变时跳过重复合成
         self._cached_frame: Optional[QImage] = None  # 缓存的合成结果
         self._cache_key: Optional[tuple] = None  # (base_time, expr_time, overlay_time, state)
+        self._frame_version: int = 0  # 帧版本号，每次合成新帧时递增
+        self._last_composite_version: int = -1  # 上次 paintEvent 消费的版本
 
         # 平滑过渡系统
         self._prev_state = ""            # 上一个状态（用于过渡）
@@ -112,13 +114,11 @@ class AnimationController:
         state_map = {
             "idle":       ("idle", None, None),
             "happy":      ("idle", "happy", "heart"),
-            "sleep":      ("sleep", None, "zzz"),
             "talk":       ("idle", "talk", None),
             "sad":        ("idle", "sad", "tear"),
             "listen":     ("idle", None, "listen"),
             "think":      ("idle", None, "think"),
             "dance":      ("dance", None, None),
-            "wander":     ("wander", None, None),
             "stare":      ("stare", None, None),
             # 新增情绪状态
             "angry":      ("idle", "angry", None),
@@ -152,17 +152,39 @@ class AnimationController:
         """深拷贝QImage（避免引用问题）"""
         return img.copy() if img and not img.isNull() else None
 
-    def update(self, delta_time: float):
-        """更新动画"""
+    def update(self, delta_time: float) -> bool:
+        """更新动画，返回是否有新帧需要重绘"""
+        old_base = self.base_layer.time
+        old_expr = self.expr_layer.time
+        old_overlay = self.overlay_layer.time
+
         self.base_layer.update(delta_time)
         self.expr_layer.update(delta_time)
         self.overlay_layer.update(delta_time)
-        self._invalidate_cache()
+
+        # 只在时间真正前进（跨帧）时才失效缓存
+        frame_changed = (
+            int(old_base * 12) != int(self.base_layer.time * 12) or
+            int(old_expr * 12) != int(self.expr_layer.time * 12) or
+            int(old_overlay * 12) != int(self.overlay_layer.time * 12)
+        )
+        if frame_changed:
+            self._invalidate_cache()
+            self._frame_version += 1
+        return frame_changed
 
     def _invalidate_cache(self):
         """使脏帧缓存失效"""
         self._cached_frame = None
         self._cache_key = None
+
+    def has_new_frame(self) -> bool:
+        """是否有 paintEvent 尚未消费的新帧"""
+        return self._frame_version != self._last_composite_version
+
+    def mark_frame_consumed(self):
+        """标记当前帧已被 paintEvent 消费"""
+        self._last_composite_version = self._frame_version
 
     def composite(self) -> QImage:
         """合成最终画面（带脏帧缓存 + 平滑过渡）"""
