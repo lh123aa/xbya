@@ -28,5 +28,5 @@ docs/agent/evidence/p5/_tmp_b4_audio/**/*.mp3 -text
 # ② 行尾必须是 CRLF：`.bat` 用 LF 会出现诡异的行拼接问题。
 #
 # 两者都要求"提交什么字节、检出就什么字节"，所以显式关掉文本转换与行尾规范化。
-启动欣雅.bat -text
-后台启动欣雅.vbs -text
+启动欣雅.vbs -text
+启动欣雅（看日志）.bat -text
