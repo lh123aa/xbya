@@ -82,6 +82,8 @@ class PetWindow(QWidget):
         self._drag_win_start = QPoint()
         self._is_snapped_state = False  # 只有 _edge_snap() 真正执行贴边时才置 True
         self._pre_snap_pos = None       # 贴边前的可见位置（存档要用它，不用屏幕外坐标）
+        # 字幕滚动窗口：上一句文本（当前句与它拼接显示，给用户阅读衔接）
+        self._subtitle_prev_sentence = ""
 
         # 常驻监听状态
         self._monitor_mic = None
@@ -466,6 +468,16 @@ class PetWindow(QWidget):
             self.set_state("idle")
             return
 
+        # 字幕策略（两段式，兼顾"立刻可见"与"逐句滚动"）：
+        #   1. 先整段上屏 —— 保证任何情况下正文都立刻可见
+        #      （静音 / TTS 失败 / 无 app 时也不会白屏），
+        #      这也是 `_on_agent_result` 对外承诺过的行为（有用例钉住）。
+        #   2. 播放线程开播后，按"当前句 + 上一句"的滚动窗口覆盖它 ——
+        #      用户能看到正在念的那句，且与上一句有衔接。
+        #
+        # ⚠️ 曾经的问题不是"先显示全文"，而是**先显示全文、再被逐句擦成碎片**
+        # 且没有任何衔接（实测时间线：@0.75s 整段 → @1.56s 第 1 句 →
+        # @2.96s 第 2 句）。现在第 2 段带上一句做上下文，观感是"滚动"而非"重来"。
         self.show_bubble(summary, max(2500, int(len(summary) / 4.0 * 1000) + 500))
 
         # 播报结果（复用现有分句播报链路：逐句字幕 + 逐句动效）
@@ -523,6 +535,7 @@ class PetWindow(QWidget):
             return
 
         logger.info("[agent] 润色补播: %s", summary[:60])
+        # 同样先整段上屏，播放线程随后按滚动窗口接管（理由见 `_on_agent_result`）
         self.show_bubble(summary, max(2500, int(len(summary) / 4.0 * 1000) + 500))
         try:
             from core.text_utils import split_sentences
@@ -549,11 +562,11 @@ class PetWindow(QWidget):
 
         # 高风险用惊讶表情，中风险用思考表情
         self.set_state("surprise" if risk == "high" else "think")
-        self.show_bubble(question, max(3000, int(len(question) / 4.0 * 1000) + 1000))
 
         self._agent_busy = True
         self._sentence_emotions = ["think"] * 1
-        # _speak_sentences 会阻塞，必须放后台；播完挂回声屏蔽
+        # 确认问句：先整句上屏（保证一定能看到），播放线程随后按滚动窗口接管。
+        self.show_bubble(question, max(3000, int(len(question) / 4.0 * 1000) + 1000))
         def _play_then_guard():
             try:
                 self._speak_sentences([question])
@@ -796,9 +809,27 @@ class PetWindow(QWidget):
         )
 
     def _wrap_text(self, text: str, fm, max_w: int, max_lines: int = 2):
-        """把文本按宽度换行，最多 max_lines 行；最后一行放不下用 … 截断。
+        """把文本按宽度换行，最多 max_lines 行；放不下的部分用 … 截断。
 
         按字符（含中文）逐个累积，保证不超宽。返回行列表。
+
+        ## 截断为什么必须显式补 `…`
+
+        旧实现在"已达最大行数"时调
+        `_clamp_line(lines[-1], fm, max_w, ellipsis=True)`，
+        而 `_clamp_line` 在"该行本来就放得下"时**原样返回、不加 …**
+        —— 于是剩余文本被静默丢掉，屏幕上却看不出来，
+        用户以为这就是完整回复（实测：第 3 句整句消失，无任何提示）。
+
+        ## 为什么只有一处截断分支
+
+        循环中途那句 `return`（换行时已攒够行数）已经覆盖了**全部**截断场景：
+        第 2 次 `append` 前必然满足 `len(lines) >= max_lines-1`，于是提前返回。
+        所以循环**正常结束**时 `len(lines) <= max_lines-1`，末尾的 `cur`
+        一定还有空行可放 —— 那里不需要（也永远走不到）截断分支。
+        这一点是穷举验证过的（6 字字母表、长度 1~6 共 55986 个文本 +
+        4000 个长随机样本，中途分支命中全部截断，末尾分支命中 0 次），
+        而不是"看起来应该"。曾经的末尾截断分支是不可达死代码，已删除。
         """
         lines = []
         cur = ""
@@ -806,9 +837,13 @@ class PetWindow(QWidget):
             if fm.horizontalAdvance(cur + ch) <= max_w:
                 cur += ch
                 continue
-            # 当前字符会让该行超宽：若已是最后一行，直接截断 + …
+            # 当前字符会让该行超宽：若已到最大行数，截断 + … 后收工
             if len(lines) >= max_lines - 1:
                 cur = self._clamp_line(cur, fm, max_w, ellipsis=True)
+                if not cur.endswith("…"):
+                    while cur and fm.horizontalAdvance(cur + "…") > max_w:
+                        cur = cur[:-1]
+                    cur += "…"
                 lines.append(cur)
                 return lines
             # 否则换行
@@ -816,11 +851,7 @@ class PetWindow(QWidget):
                 lines.append(cur)
             cur = ch
         if cur:
-            if len(lines) >= max_lines:
-                # 已到最大行数，剩余文本无法展示：在最后一行加 …
-                lines[-1] = self._clamp_line(lines[-1], fm, max_w, ellipsis=True)
-            else:
-                lines.append(cur)
+            lines.append(cur)
         return lines
 
     def _clamp_line(self, line: str, fm, max_w: int, ellipsis: bool = False):
@@ -919,6 +950,14 @@ class PetWindow(QWidget):
         text = re.sub(r'^[\-\*=_]{3,}\s*$', '', text, flags=re.MULTILINE)
         # 去掉链接 [text](url) → text
         text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+        # ★ 去掉内部控制标记 [silent] / [thinking] / [emotion:xxx] 等。
+        #   它们是**给管线看的控制指令**，不是给人看的内容 ——
+        #   漏到字幕上就是"屏幕上出现 [silent]嗯嗯。"这种脏字。
+        #   必须在 markdown 链接规则**之后**处理，否则 `[silent]` 会被
+        #   误当链接文本；这里只吃"方括号里是单个英文控制词"的形状。
+        text = re.sub(r'\[\s*(?:silent|thinking|emotion(?::[a-z_]+)?|'
+                      r'action(?::[a-z_]+)?|pause|listen|wait)\s*\]',
+                      '', text, flags=re.IGNORECASE)
         # 去掉孤立的 * / # / > 残留（连续2个以上）
         text = re.sub(r'[\*#>]{2,}', '', text)
         # 去掉多余空白行（清理后可能留下空行）
@@ -1808,6 +1847,8 @@ class PetWindow(QWidget):
 
             # 队列项：(audio, text)。携带文本以便播放时逐句动态更新字幕
             audio_queue = _queue.Queue()
+            # 新一次播报：清空字幕滚动窗口，避免上一轮回复的末句拼到这一轮开头
+            self._subtitle_prev_sentence = ""
             # 逐句情绪索引：播放线程按此索引从 _sentence_emotions 取对应情绪
             self._sentence_idx = 0
             # 本次播报起始时刻（收尾时用来算"说了多久"→ 回声窗口长度）
@@ -1848,11 +1889,21 @@ class PetWindow(QWidget):
                         logger.info("[voice] 播放线程：被打断，跳过剩余句子")
                         break
                     audio, text = item
-                    # 逐句更新字幕：只保留当前句（显示循环中正在说的那句），
-                    # 时长按该句预估，播放时被 _speaking 冻结，播完进入下一句
+                    # 逐句更新字幕：显示**当前句 + 上一句**（滚动窗口）。
+                    #
+                    # 为什么不是"只显示当前句"：每句把上一句擦掉，用户读到一半
+                    # 就没了，长回复只能看到碎片 —— 这正是"字幕动态更新没做好"
+                    # 的观感来源。
+                    # 为什么不是"一直累积全文"：窗口只有 228px 宽、字幕区 44px
+                    # 高（最多 2 行），累积会立刻溢出、后两行永远看不到。
+                    # 折中：保留最近两句，既有上下文衔接，又不溢出。
                     if text:
+                        _prev = getattr(self, "_subtitle_prev_sentence", "")
+                        shown = f"{_prev}{text}" if _prev else text
                         show_dur = max(2500, int(len(text) / 4.0 * 1000) + 500)
-                        self.show_bubble(text, show_dur)
+                        self.show_bubble(shown, show_dur)
+                        # 记为"上一句"，供下一句拼接（仅当前句本身，不含再上一句）
+                        self._subtitle_prev_sentence = text
 
                     # ── 逐句情绪动效切换（跨线程安全） ──
                     if self._sentence_emotions and self._sentence_idx < len(self._sentence_emotions):
