@@ -196,6 +196,75 @@ class TestPetWindow:
         assert win.bubble_timer <= 0
         assert win.bubble_text == ""
 
+    def test_show_bubble_from_background_thread_lands(self, pet_window):
+        """**后台线程**调 show_bubble 也必须落到窗口上（回归 D30）
+
+        这条钉的是一个"字幕永远不显示"的静默失效：
+        `_invoke_on_main` 原实现用 `QTimer.singleShot(0, fn)` 跨线程投递，
+        但 Qt 会在**调用线程**上创建那个定时器 —— 工作线程没有事件循环，
+        回调被**静默丢弃**。
+
+        为什么旧用例抓不到：`test_show_bubble` 是在**主线程**里调的，
+        走的是 `_is_main_thread()` 直连分支，压根没进 QTimer 那条路。
+        而真实链路上，语音管线 / Agent 结果回调 / `_speak_sentences`
+        **全都在后台线程**里调 `show_bubble` —— 所以线上表现为"字幕没了"，
+        测试却全绿。
+
+        判据：从后台线程调用后，处理事件循环，`bubble_text` 必须变成目标文本。
+        """
+        import threading
+
+        win = pet_window
+        win.bubble_text = ""
+        done = threading.Event()
+
+        def worker():
+            win.show_bubble("来自后台线程的字幕", 3000)
+            done.wait(2.0)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+        # 给主线程事件循环机会处理排队调用
+        deadline = time.time() + 3.0
+        while time.time() < deadline and not win.bubble_text:
+            QApplication.processEvents()
+            time.sleep(0.02)
+        done.set()
+        t.join(timeout=1.0)
+
+        assert win.bubble_text == "来自后台线程的字幕", (
+            "后台线程调用 show_bubble 后 bubble_text 仍为空 —— "
+            "跨线程投递丢了（QTimer.singleShot 不能跨线程用）")
+
+    def test_invoke_on_main_uses_queued_connection(self, pet_window, monkeypatch):
+        """反方向保护：`_invoke_on_main` 不许再用 QTimer.singleShot 跨线程投递
+
+        上面那条测的是"能不能到"，这条测的是"用的什么机制"——
+        因为 QTimer 方案在**某些平台/版本**上可能碰巧能到，
+        但那是巧合，不是契约。这里直接钉住投递方式。
+        """
+        win = pet_window
+        calls = []
+        monkeypatch.setattr(
+            pw.QTimer, "singleShot",
+            lambda *a, **k: calls.append(("QTimer", a)),
+        )
+        # 在主线程之外的线程里调，才会走跨线程分支
+        import threading
+
+        def worker():
+            win._invoke_on_main(lambda: None)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=2.0)
+        QApplication.processEvents()
+
+        assert not calls, (
+            f"_invoke_on_main 仍在用 QTimer.singleShot 跨线程投递：{calls}；"
+            "应改用 QMetaObject.invokeMethod(Qt.QueuedConnection)")
+
     def test_set_state_syncs_animation_and_state_machine(self, pet_window):
         """测试set_state同步状态机与动画控制器"""
         win = pet_window

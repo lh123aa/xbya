@@ -802,11 +802,48 @@ class PetWindow(QWidget):
         return QThread.currentThread() == self.thread()
 
     def _invoke_on_main(self, fn) -> None:
-        """如果不在主线程，通过 QTimer.singleShot(0, ...) 转到主线程执行"""
+        """把 fn 投递到主线程执行（后台线程调用时安全）
+
+        ## 为什么不能用 `QTimer.singleShot(0, fn)`（实测踩到的坑）
+
+        原实现是：
+            if self._is_main_thread(): fn()
+            else: QTimer.singleShot(0, fn)
+
+        从**后台线程**调 `QTimer.singleShot` 时，Qt 会在**调用线程**上创建定时器
+        —— 而工作线程没有事件循环，那个定时器永远不会被处理，**回调被静默丢弃**。
+
+        受控实验（`_tmp_verify_root.py`，同一份代码、只换调用线程）：
+            主线程调用 → 回调执行 1 次  ✓
+            后台线程调用 → 回调执行 0 次 ✗ ← 丢弃
+
+        后果是本项目最要命的那种"静默失效"：语音管线、Agent 结果回调、
+        `_speak_sentences` 都在后台线程里调 `show_bubble()` —— **字幕从此永不显示**，
+        而日志一切正常（没有报错、TTS 照常播放）。
+
+        ## 正确做法：`QMetaObject.invokeMethod` + QueuedConnection
+
+        它把调用**排进目标对象（窗口）所在线程的事件队列**，跨线程投递有保证。
+        必须用 `QueuedConnection`（默认的 AutoConnection 在同线程时会变直连，
+        但我们要的就是"排到主线程队列"，显式指定更清楚）。
+
+        兜底：若 invokeMethod 不可用（异常/被回收），退回直接调用 ——
+        直接调用在非主线程下虽然不符合 Qt 规范，但**顶多是绘制竞态**，
+        比"永远不显示"要好。
+        """
         if self._is_main_thread():
             fn()
-        else:
-            QTimer.singleShot(0, fn)
+            return
+        try:
+            from PySide6.QtCore import QMetaObject, Qt as _Qt
+            # invokeMethod 只能调 QObject 的槽；用 Qt.QueuedConnection 排队
+            QMetaObject.invokeMethod(self, fn, _Qt.QueuedConnection)
+        except Exception as e:
+            logger.debug("[ui] invokeMethod 失败(%s)，退回直接调用", e)
+            try:
+                fn()
+            except Exception as e2:
+                logger.warning("[ui] 主线程回调执行失败: %s", e2)
 
     @staticmethod
     def _sanitize_text(text: str) -> str:
