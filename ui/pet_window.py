@@ -1246,6 +1246,15 @@ class PetWindow(QWidget):
             self.move(new_x, new_y)
             event.accept()
 
+    #: 判定"这是拖拽还是点击"的位移阈值（像素）。
+    #:
+    #: **为什么必须是一个共享常量**：原先"点击"用 `moved > 6`、
+    #: "拖拽"却只看 `self.dragging`（只要按下过就是 True）——
+    #: 两个判据各用各的标准，于是**任何一次单击都会被同时判成点击和拖拽**
+    #: （实测：原地按下再松手，就触发 `on_drag()` 并把位置存档改写掉）。
+    #: 现在两者共用这一个阈值，互补且互斥。
+    CLICK_DRAG_THRESHOLD = 6
+
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             was_dragging = self.dragging
@@ -1255,19 +1264,34 @@ class PetWindow(QWidget):
             # 注意：_edge_snap() 可能刚把窗口移到屏幕外，此时 _save_position()
             # 会因为 _is_snapped_state=True 而主动跳过 —— 这是对的，
             # 用户要的位置是"拖到哪儿"，不是贴边后藏到屏幕外的坐标。
-            try:
-                self._save_position()
-            except Exception:
-                pass
             # 「点击打断」：快速点击（按下→松开时间短且几乎未移动）
             # 覆盖所有活跃状态：speaking / processing / listen / think
             press_t = getattr(self, "_press_time", None)
             press_p = getattr(self, "_press_pos", None)
             dur = (time.time() - press_t) if press_t else 999
+            # 位移判据：鼠标**全局**位移比窗口内坐标更可靠 ——
+            # 窗口被拖走时 `event.position()` 是窗口内相对坐标，
+            # 窗口跟着鼠标走，所以相对坐标几乎不变（实测会把真拖拽判成点击）。
             moved = False
             if press_p is not None:
                 rel_p = event.position()
-                moved = (rel_p - press_p).manhattanLength() > 6
+                moved = (rel_p - press_p).manhattanLength() > self.CLICK_DRAG_THRESHOLD
+            gp_now = event.globalPosition()
+            gp_start = getattr(self, "_drag_mouse_start", None)
+            if gp_start is not None:
+                global_moved = (abs(int(gp_now.x()) - gp_start.x())
+                                + abs(int(gp_now.y()) - gp_start.y()))
+                moved = moved or global_moved > self.CLICK_DRAG_THRESHOLD
+
+            # 只有**真的移动了**才算拖拽。原实现只看 `was_dragging`，
+            # 而 `mousePressEvent` 只要按下就把 dragging 置 True，
+            # 于是原地单击也会走到这里，触发 angry 动效。
+            if was_dragging and moved:
+                try:
+                    self._save_position()
+                except Exception:
+                    pass
+
             is_active = self._speaking or self._processing or self._monitor_enabled
             if not moved and dur < 0.4:
                 if is_active:
@@ -1280,8 +1304,8 @@ class PetWindow(QWidget):
                     self.anim_controller.set_state(new_state)
                     self._forward_vrm_state(new_state)
                     logger.info("[互动] 点击触发: %s", new_state)
-            # 拖拽结束 → 触发动效
-            if was_dragging and not moved:
+            # 拖拽结束 → 触发动效（与上面的点击分支互斥：moved 只有一个取值）
+            if was_dragging and moved:
                 drag_state = self.state_machine.on_drag()
                 self.anim_controller.set_state(drag_state)
                 self._forward_vrm_state(drag_state)
