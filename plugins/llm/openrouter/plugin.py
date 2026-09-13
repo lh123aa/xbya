@@ -135,6 +135,10 @@ class UniversalLLM(LLMEngine):
         else:
             self.system_prompt = system_prompt or "你是欣雅，一个友善的AI桌面管家。"
         self.reply_style = reply_style
+        #: 流式总时长硬上限（秒）。超过则用已收到的文本收尾。
+        #: 依据：用户要求"回复 2 秒内"，而实测存在 30 秒的超时样本；
+        #: 半句回复远好过让用户干等半分钟才听到"抱歉超时了"。
+        self._stream_deadline_sec = 6.0
         logger.info(f"LLM 回复风格: {reply_style}")
         # 备用提供商（429 限流自动降级）
         self.fallback_api_key = fallback_api_key or ""
@@ -251,14 +255,44 @@ class UniversalLLM(LLMEngine):
                 "stream": True,
             }
             import requests as _req
-            r = _req.post(url, headers=headers, json=payload, stream=True, timeout=30)
+            # timeout 用 (连接, 读取) 元组：connect 短（快速失败），read 覆盖
+            # "两个 SSE 分片之间的最大间隔"。单值 30 会让整个流最多挂 30s，
+            # 用户干等半分钟完全不知道发生了什么 —— 实测有 30s 的超时样本。
+            r = _req.post(url, headers=headers, json=payload, stream=True,
+                          timeout=(5, 12))
             if r.status_code != 200:
                 logger.error(f"LLM 流式请求失败: {r.status_code} {r.text[:200]}")
-                # 降级到非流式
-                return self._fallback_stream(messages)
+                # 429 → 等一小会儿重试一次（TPM 窗口是滑动的，几百毫秒后常能过），
+                # 仍失败再走备用提供商。
+                if r.status_code == 429:
+                    import time as _t
+                    _t.sleep(1.2)
+                    r2 = _req.post(url, headers=headers, json=payload, stream=True,
+                                   timeout=(5, 12))
+                    if r2.status_code == 200:
+                        logger.info("[llm] 429 重试成功")
+                        r = r2
+                    else:
+                        logger.warning("[llm] 429 重试仍失败，转备用提供商")
+                        return self._fallback_stream(messages)
+                else:
+                    return self._fallback_stream(messages)
             full = []
+            reasoning_chars = 0
+            _deadline = time.monotonic() + self._stream_deadline_sec
+            # ⚠️ 必须强制 UTF-8 解码。
+            #   `iter_lines(decode_unicode=True)` 用的是 `r.encoding`，而流式响应
+            #   的 Content-Type 通常不带 charset → requests 退回 **ISO-8859-1**。
+            #   于是中文 UTF-8 字节被按 Latin-1 解成 "æå¤©æ¯ææä¸" 这种乱码：
+            #   乱码文本既进了 TTS（用户听到的是天书），也进了对话历史
+            #   （下一轮模型看到的是乱码上下文）—— 这正是"答非所问"的直接成因。
+            r.encoding = "utf-8"
             for line in r.iter_lines(decode_unicode=True):
                 if not line or not line.strip():
+                    continue
+                # SSE 事件名行（"event: error" 等）不是 JSON，直接跳过 ——
+                # 原实现没跳过它，每轮都抛一次 JSONDecodeError 走异常分支。
+                if line.startswith("event:"):
                     continue
                 if line.startswith("data:"):
                     line = line[len("data:"):].strip()
@@ -271,11 +305,37 @@ class UniversalLLM(LLMEngine):
                 choices = obj.get("choices")
                 if not choices:
                     continue
-                content = choices[0].get("delta", {}).get("content", "")
+                delta = choices[0].get("delta", {}) or {}
+                # ⚠️ 只收 content，**不收 reasoning**。
+                #   部分模型（gpt-oss / compound 系列）是推理模型，会先把思维链
+                #   放在 `delta.reasoning` 里吐出来；若把两者混在一起，TTS 会念出
+                #   "用户问我明天星期几，我得先推算一下日期……"这种旁白 —— 用户听到的
+                #   就是驴唇不对马嘴。但 reasoning 要计数：它是纯开销，
+                #   而且实测会**吃光 max_tokens 让 content 全空**（gpt-oss-20b
+                #   1078 字符思维链后正文为空），必须能识别出来而不是静默返回空。
+                if delta.get("reasoning"):
+                    reasoning_chars += len(delta["reasoning"])
+                content = delta.get("content")
                 if content:
                     full.append(content)
+                # 总时长硬上限：即使每个分片都在 read timeout 之内到达，
+                # 一整轮也可能拖很久（推理模型尤其）。超了就用手上已有的文本收尾，
+                # 而不是让用户继续干等 —— 半句回复远好过 30 秒沉默。
+                if time.monotonic() > _deadline:
+                    logger.warning(
+                        "[llm] 流式超过总时长上限 %.1fs，提前收尾（已收 %d 字）",
+                        self._stream_deadline_sec, sum(len(x) for x in full),
+                    )
+                    break
             text = "".join(full).strip()
             if not text:
+                if reasoning_chars:
+                    logger.warning(
+                        "[llm] 流式结束但正文为空（推理内容 %d 字符吃光了 max_tokens=%s）"
+                        "→ 转备用链路", reasoning_chars, self.max_tokens,
+                    )
+                    return self._fallback_stream(messages)
+                logger.warning("[llm] 流式返回空文本")
                 return None
             from core.text_utils import split_sentences
             return split_sentences(text)

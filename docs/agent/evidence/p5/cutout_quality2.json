@@ -1,0 +1,28 @@
+[
+  {
+    "method": "D_borderflood",
+    "antialias_px": 5269,
+    "antialias_pct": 0.13,
+    "components": 1193,
+    "main_px": 1575172,
+    "tiny_fragments": 1134,
+    "holes": 91,
+    "jump_mean": 0.668,
+    "jump_le1_pct": 89.9,
+    "jump_ge3": 331,
+    "jump_max": 52
+  },
+  {
+    "method": "E_borderflood_plus",
+    "antialias_px": 35675,
+    "antialias_pct": 0.88,
+    "components": 3,
+    "main_px": 1575403,
+    "tiny_fragments": 0,
+    "holes": 2,
+    "jump_mean": 0.326,
+    "jump_le1_pct": 96.7,
+    "jump_ge3": 96,
+    "jump_max": 24
+  }
+]

@@ -815,9 +815,19 @@ class TestSettingsIntegration:
 
         win = PetWindow()
         win.app = FakeApp()
-        win.load_pet("xbya")                         # 真实资源：画布 128×288
+        win.load_pet("xbya")                         # 真实资源：非方形画布
         cw, ch = win.anim_controller.get_size()
-        assert (cw, ch) == (128, 288), f"xbya 画布应为 128×288，实为 {cw}×{ch}"
+        # ⚠️ 断言的是**结构性事实**（画布非方形、且与 manifest 一致），
+        #   不是某个冻结的数字。原先写死 `(128, 288)`，换立绘后立刻变红 ——
+        #   但红的原因是"角色换了"，不是"宽高比保护坏了"（与 D23 同族：
+        #   把具体资产值钉进测试，等于让"换素材"这件事永远过不了门禁）。
+        man = json.loads((Path(__file__).resolve().parents[1] / "resources"
+                          / "sprites" / "xbya" / "manifest.json").read_text("utf-8"))
+        assert [cw, ch] == man["size"], (
+            f"画布应与 manifest 一致：manifest={man['size']}，实为 {cw}×{ch}")
+        assert ch > cw, (
+            f"本用例的前提是**非方形**画布（高 > 宽）才有意义，"
+            f"实为 {cw}×{ch}；若换成方形角色，本用例应改用方形那条")
 
         win._pet_size = 300                          # 造出"尺寸变了"的差异
         win.apply_settings()

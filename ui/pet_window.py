@@ -527,10 +527,30 @@ class PetWindow(QWidget):
         self._agent_busy_since = 0.0
         if text:
             threading.Thread(
-                target=self._run_llm_reply,
+                target=self._run_llm_reply_safe,
                 args=(text, request_id),
                 daemon=True,
             ).start()
+        else:
+            # 无文本可回退：麦克风仍停在暂停态（Agent 路径不负责恢复），
+            # 必须在这里救回来，否则"她再也不听了"。
+            self._force_resume_mic()
+
+    def _run_llm_reply_safe(self, text: str, request_id: str = "") -> None:
+        """`_run_llm_reply` 的带兜底包装
+
+        `_run_llm_reply` 内部有多条提前 return（打断、静默、TTS 失败），
+        这些出口都不会走到 `_speak_sentences`，也就没人恢复麦克风。
+        Agent 路径下麦克风是**由这里负责**的（`_voice_pipeline` 的
+        finally 已因 `_agent_busy` 而跳过恢复），所以必须兜底。
+        """
+        try:
+            self._run_llm_reply(text, request_id)
+        finally:
+            # 播报路径已经恢复过就无害（resume 是幂等的）；
+            # 未播报（失败/静默/打断）时，这里是唯一的恢复点。
+            if not self._speaking:
+                self._force_resume_mic()
 
     def _on_agent_reminder(self, data: dict) -> None:
         """提醒到点：播报内容（F7）
@@ -607,6 +627,12 @@ class PetWindow(QWidget):
                 logger.warning("[agent] 处理超时(>30s)，释放忙碌锁")
                 self._agent_busy = False
                 self._agent_busy_since = 0.0
+                # ★ 必须同时把麦克风救回来。Agent 路径下麦克风的恢复责任
+                #   挂在"结果播完"那条链路上（_speak_sentences → _arm_echo_guard）；
+                #   结果永远不回来，麦克风就永远停在暂停态 —— 表现为
+                #   "她还理我，但再也听不见我说话"，而且因为 `_agent_busy`
+                #   也是队列闸门，新语音会被静默排队，用户完全无从察觉。
+                self._force_resume_mic()
                 self.show_bubble("抱歉，这个请求超时了…", 2500)
                 self.set_state("idle")
 
@@ -1599,6 +1625,10 @@ class PetWindow(QWidget):
         for w in list(self._pending_wavs):
             self._delete_wav(w)
         self._pending_wavs.clear()
+        # ★ 关键：Agent 路径下麦克风是靠"结果播完"那条链路恢复的。
+        #   若 Agent 卡死、结果永不返回，麦克风会**一直停在暂停状态** ——
+        #   用户感知就是"她彻底不听我说话了"。强制解锁时必须把麦克风救回来。
+        self._force_resume_mic()
         # 让用户知道发生了什么（沉默失败是最糟的失败）
         self.set_state("idle")
         try:
@@ -1606,6 +1636,16 @@ class PetWindow(QWidget):
         except Exception:
             pass
         return True
+
+    def _force_resume_mic(self) -> None:
+        """无条件恢复麦克风监听（兜底，供看门狗/异常收尾调用）"""
+        if not self._monitor_mic:
+            return
+        try:
+            self._monitor_mic.resume_listening()
+            logger.info("[看门狗] 已强制恢复麦克风监听")
+        except Exception as e:
+            logger.warning("[看门狗] 强制恢复麦克风失败: %s", e)
 
     def _poll_pending(self):
         """处理完当前语音后，取出待处理队列中的下一条继续处理"""
@@ -1912,12 +1952,22 @@ class PetWindow(QWidget):
             #   _start_pipeline 暂停了麦克风但没有任何播报路径来恢复它。
             #   播报路径（_speak_sentences）内部会再暂停一次，
             #   所以这里的恢复不会与播报冲突 —— 即使竞态也只是短暂闪开。
-            if self._monitor_mic and not self._speaking:
+            #
+            # ⚠️ 但 **Agent 路径必须排除**：那条路径在 emit 之后就 return 了，
+            #   此刻 Agent 还在跑、TTS 还没开始播。若在这里恢复麦克风，
+            #   她会**录到自己的 TTS**（实测：09:40:29 恢复 → 09:40:30 播报
+            #   → 09:40:31 触发录音 → 识别出自己刚说的话）→ 自己跟自己对答，
+            #   用户看到的就是"答非所问、驴唇不对马嘴"。
+            #   判据：_agent_busy 为真时说明结果尚未播完，恢复交给
+            #   _speak_sentences / _arm_echo_guard 那条链路负责。
+            if self._monitor_mic and not self._speaking and not self._agent_busy:
                 try:
                     import time as _t
                     def _safe_resume():
                         _t.sleep(0.3)  # 短暂延迟，让播报路径有机会先暂停
-                        if not self._speaking and not self._processing:
+                        # 复查：这 0.3s 内可能已经开始处理下一轮或 Agent 已接手
+                        if (not self._speaking and not self._processing
+                                and not self._agent_busy):
                             self._monitor_mic.resume_listening()
                     threading.Thread(target=_safe_resume, daemon=True).start()
                 except Exception:
@@ -1943,13 +1993,23 @@ class PetWindow(QWidget):
                 full_reply = "".join(sentences)
             else:
                 full_reply = None
-            self._chat_history.append({"role": "user", "content": text})
-            if full_reply:
-                self._chat_history.append({"role": "assistant", "content": full_reply})
-            self._chat_history = self._chat_history[-20:]
+            # ⚠️ 失败时**不写历史**。
+            #   原实现先把 user 消息塞进历史，再判断 sentences 是否为空；
+            #   于是 LLM 调用失败/返回空的那一轮，历史里会留下**一条没有回复的
+            #   用户消息**。累积几轮后，模型看到的是"连续几条 user 消息"，
+            #   对话结构被破坏 —— 表现就是用户反馈的"答非所问、驴唇不对马嘴"。
+            #   只有一轮完整（user + assistant）才入历史。
             if not sentences:
                 self._handle_invalid()
                 return
+            self._chat_history.append({"role": "user", "content": text})
+            self._chat_history.append({"role": "assistant", "content": full_reply})
+            # 历史长度直接决定每次请求的 token 数，而 Groq 免费档 TPM 很紧
+            # （实测 gpt-oss-20b 只有 8000 TPM）。原先留 20 条 = 10 轮，
+            # 单次请求轻松吃掉 2000+ token → 连说几句就 429 →
+            # 回退链路延迟翻倍、回复质量下降（用户感知就是"答非所问"）。
+            # 留 8 条 = 4 轮，足够维持话题连贯，token 占用降到 1/3。
+            self._chat_history = self._chat_history[-8:]
             self._recent_invalid = 0
 
             # ── 语义情绪分析：匹配LLM回复内容到动效 ──

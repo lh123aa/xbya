@@ -52,6 +52,8 @@ class MicrophoneService:
         #: 当前设备的**近期电平**（监听线程持续更新，观察者拿来对比）
         self._active_level = 0.0
         self._active_level_at = 0.0
+        #: 连续"电平恒为 0"的 chunk 计数（死流检测，见监听循环）
+        self._silent_chunks = 0
         #: 观察者参数（可按需调；默认 20 秒看一次，避免频繁开关流）
         self._watch_interval = 20.0
         #: 轮转游标：每轮只探一个候选设备（全探会长时间独占麦克风）
@@ -135,8 +137,12 @@ class MicrophoneService:
         except Exception:
             return False
     
-    def _pick_mic_index(self) -> Optional[int]:
+    def _pick_mic_index(self, exclude: Optional[int] = None) -> Optional[int]:
         """挑选最合适的真实麦克风设备索引（返回 None=使用系统默认）。
+
+        Args:
+            exclude: 要排除的设备索引。死流恢复时传"当前这个已经不工作的设备"，
+                否则实测电平会把同一个哑设备再挑回来（它的历史电平可能还很高）。
 
         优先级：
         1. 显式指定（`self.input_device`，来自 config `voice.mic_device`）
@@ -171,7 +177,7 @@ class MicrophoneService:
             )
 
         # ── 自动挑选：优先实测电平 ──
-        picked = self._pick_by_level()
+        picked = self._pick_by_level(exclude=exclude)
         if picked is not None:
             return picked
 
@@ -186,6 +192,8 @@ class MicrophoneService:
             except Exception:
                 pass
             for i in range(p.get_device_count()):
+                if exclude is not None and i == exclude:
+                    continue
                 info = p.get_device_info_by_index(i)
                 if info.get('maxInputChannels', 0) <= 0:
                     continue
@@ -208,8 +216,13 @@ class MicrophoneService:
             logger.warning(f"[mic] 设备挑选失败，使用默认: {e}")
         return None
 
-    def _pick_by_level(self, probe_seconds: float = 0.6) -> Optional[int]:
+    def _pick_by_level(self, probe_seconds: float = 0.6,
+                       exclude: Optional[int] = None) -> Optional[int]:
         """按**实测电平**挑设备：返回 RMS 最高的非回环设备索引。
+
+        Args:
+            probe_seconds: 每设备采样时长
+            exclude: 排除的设备索引（死流恢复时排除那个已经哑掉的设备）
 
         设计取舍：
         - 采样 0.6s/设备 × 10 个 mic ≈ 6 秒。**不能更短**：实测 0.15s
@@ -229,6 +242,8 @@ class MicrophoneService:
 
         try:
             devs = [d for d in self.list_input_devices() if d.get("kind") == "mic"]
+            if exclude is not None:
+                devs = [d for d in devs if d["index"] != exclude]
             if not devs:
                 return None
             levels = self.probe_device_levels(seconds=probe_seconds,
@@ -734,6 +749,7 @@ class MicrophoneService:
                     chunk_sec = self.chunk_size / max(rate, 1)  # 单个chunk秒数（按实际rate）
                     chunk_count = 0  # 独立采样计数（每4个chunk评估一次音量）
                     vol_log_count = 0
+                    self._last_vol_log_at = 0.0
 
                     while not self._listen_stop:
                         # ── 声源自动跟随：有人请求换设备 → 关流重开 ──
@@ -816,6 +832,57 @@ class MicrophoneService:
                         self._active_level = max(vol, self._active_level * 0.9)
                         self._active_level_at = time.time()
 
+                        # ── 死流检测：设备被拔/被独占/驱动失效时，read() 仍会
+                        #    正常返回，但缓冲区**全是 0**。此时底层没有任何异常，
+                        #    监听循环会永远安静地空转 —— 用户感知是"她彻底聋了"，
+                        #    而日志只显示 vol=0.0 刷屏（实测踩到：自动跟随切到
+                        #    虚拟音频设备后整条流变哑，之后再无任何触发）。
+                        #    判据：连续 ~3 秒（约 90 个 chunk）电平恒为 0 → 认定死流，
+                        #    关流重开并重新挑设备。
+                        if vol <= 0.0:
+                            self._silent_chunks += 1
+                        else:
+                            self._silent_chunks = 0
+                        if self._silent_chunks >= 90:
+                            self._silent_chunks = 0
+                            logger.warning(
+                                "[mic] 连续 %.0f 秒电平恒为 0 → 判定音频流已死，重开设备",
+                                (self.chunk_size / max(rate, 1)) * 90)
+                            try:
+                                if stream is not None:
+                                    stream.stop_stream()
+                                    stream.close()
+                            except Exception:
+                                pass
+                            stream = None
+                            # 重新挑设备（把当前这个明显不工作的排除在外）
+                            try:
+                                new_idx = self._pick_mic_index(exclude=dev_idx)
+                            except Exception:
+                                new_idx = dev_idx
+                            try:
+                                stream = p.open(
+                                    format=pyaudio.paInt16,
+                                    channels=self.channels,
+                                    rate=self.sample_rate,
+                                    input=True,
+                                    input_device_index=new_idx,
+                                    frames_per_buffer=self.chunk_size,
+                                )
+                                rate = self.sample_rate
+                                dev_idx = new_idx
+                                self._active_device = new_idx
+                                self._active_level = 0.0
+                                noise_floor = 0.0
+                                state = "standby"
+                                frames = []
+                                voice_points = 0
+                                logger.info("[mic] 死流恢复：已重开 idx=%s", new_idx)
+                            except Exception as e:
+                                logger.error("[mic] 死流恢复失败: %s", e)
+                                break
+                            continue
+
                         if state == "standby":
                             # 稳健背景噪声估计：只缓慢跟随"持续的低音量"，用更保守的上升
                             # 防止突发声(关门/拍桌/喇叭)把底噪瞬间拉高、导致阈值被带偏。
@@ -835,10 +902,13 @@ class MicrophoneService:
                             # 或使用耳机（消除扬声器→麦克风回声链路）。
                             # 触发阈值：底噪的1.7倍 + 60，且不低于基础阈值（偏防噪音）
                             trigger_threshold = max(speech_volume, noise_floor * 1.7 + 60)
-                            # 每300 chunk 输出一次音量（约5秒），避免刷屏
-                            vol_log_count += 1
-                            if vol_log_count >= 300:
-                                vol_log_count = 0
+                            # 每 ~5 秒输出一次音量（按**时间**节流，不按 chunk 数）。
+                            # 原先按 chunk 计数（300 个）在正常速率下约 9.6 秒一次，
+                            # 但设备返回全零时 read() 立即返回，循环高速空转，
+                            # 300 个 chunk 几毫秒就跑完 → 日志被 vol=0.0 刷屏，
+                            # 真正的故障信息（死流）反而被淹没。
+                            if time.time() - self._last_vol_log_at >= 5.0:
+                                self._last_vol_log_at = time.time()
                                 logger.info(f"[音量] vol={vol:.1f} (触发阈值={trigger_threshold:.0f}, 底噪={noise_floor:.0f})")
                             if vol > trigger_threshold:
                                 # 触发冷却：刚处理完一段语音后，短时间内忽略新触发，

@@ -1,0 +1,53 @@
+[
+  {
+    "method": "A_rembg_hard(现行)",
+    "transparent_pct": 58.84,
+    "opaque_pct": 41.16,
+    "antialias_px": 0,
+    "antialias_pct": 0.0,
+    "rows_with_edge": 4434,
+    "jump_mean": 0.454,
+    "jump_le1_pct": 95.4,
+    "jump_ge3": 120,
+    "jump_ge3_pct": 2.7,
+    "jump_max": 14,
+    "components": 100,
+    "main_px": 1675646,
+    "tiny_fragments": 92,
+    "holes": 51
+  },
+  {
+    "method": "B_whitekey_soft(白底色键)",
+    "transparent_pct": 58.78,
+    "opaque_pct": 35.84,
+    "antialias_px": 218908,
+    "antialias_pct": 5.38,
+    "rows_with_edge": 4446,
+    "jump_mean": 2.726,
+    "jump_le1_pct": 86.7,
+    "jump_ge3": 383,
+    "jump_ge3_pct": 8.6,
+    "jump_max": 616,
+    "components": 1182,
+    "main_px": 1464697,
+    "tiny_fragments": 1119,
+    "holes": 1641
+  },
+  {
+    "method": "C_rembg_soft",
+    "transparent_pct": 58.21,
+    "opaque_pct": 2.53,
+    "antialias_px": 1598537,
+    "antialias_pct": 39.26,
+    "rows_with_edge": 4442,
+    "jump_mean": 0.416,
+    "jump_le1_pct": 94.7,
+    "jump_ge3": 96,
+    "jump_ge3_pct": 2.2,
+    "jump_max": 11,
+    "components": 100,
+    "main_px": 1675646,
+    "tiny_fragments": 92,
+    "holes": 51
+  }
+]
