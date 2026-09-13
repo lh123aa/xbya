@@ -2437,6 +2437,14 @@ class PetWindow(QWidget):
         cm = self.app.config_manager if (self.app and getattr(self.app, "config_manager", None)) else None
 
         # ── 功能开关 ──
+        # 置顶**放在最上面**：它是这个菜单里最常用的一个（用户明确要求），
+        # 而菜单是自上而下扫读的，常用项在顶部才不用每次找。
+        top = bool(cm.get("ui.always_on_top", True)) if cm else bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        act_top = QAction("📌 置顶", self)
+        act_top.setCheckable(True)
+        act_top.setChecked(top)
+        act_top.toggled.connect(self._toggle_top)
+        menu.addAction(act_top)
         # 字幕
         sub_enabled = bool(cm.get("ui.subtitle_enabled", True)) if cm else self._subtitle_enabled
         act_sub = QAction("💬 字幕", self)
@@ -2454,13 +2462,6 @@ class PetWindow(QWidget):
         act_mute.toggled.connect(lambda on: self._set_mute_state(not on))  # toggled(勾选=有声) → 取消即静音
         logger.info(f"[声音菜单] 初始勾选={not self._voice_muted} (config.muted={cm.get('voice.muted', False) if cm else '?'})")
         menu.addAction(act_mute)
-        # 置顶
-        top = bool(cm.get("ui.always_on_top", True)) if cm else bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
-        act_top = QAction("📌 置顶", self)
-        act_top.setCheckable(True)
-        act_top.setChecked(top)
-        act_top.toggled.connect(self._toggle_top)
-        menu.addAction(act_top)
         # 麦克风
         act_mic = QAction("🎤 麦克风", self)
         act_mic.setCheckable(True)
