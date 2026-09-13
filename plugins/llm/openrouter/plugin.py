@@ -205,6 +205,13 @@ class UniversalLLM(LLMEngine):
         self._last_quota_at = 0.0     # 最近一次 429 的时间戳
         self._last_error = ""         # 最近一次非 200 的简述（不含密钥）
         self._ok_calls = 0            # 累计成功次数
+        #: "整条链路"的诊断串：主+备用**各自**的失败原因。
+        #:
+        #: 为什么不复用 `_last_error`：那个字段是**对外契约**，
+        #: `quota_blocked` 靠它 `startswith("429")` 判定。把"两家都失败"的
+        #: 复合描述写进去会让配额状态误报（实测改了立刻 4 条用例变红）。
+        #: 所以"某一次请求的失败原因"与"整条链路为什么没能回答"分成两个字段。
+        self._last_chain_error = ""
 
         self._check_availability()
 
@@ -395,10 +402,21 @@ class UniversalLLM(LLMEngine):
         try:
             result = self._call_api(messages)
             if not result:
+                # 关键：不能静默返回 None。
+                # 原先这里什么都不记，于是"流式失败 → 非流式也失败"这条路上
+                # 用户看到的是**完全没有任何反馈**，而真正原因（两家都挂了、
+                # 或者备用模型名已下架）只存在于 `_call_api` 内部的日志里。
+                # 这里补一条，把 `_last_error` 带出来，让上层能说出原因。
+                logger.error(
+                    "流式与非流式都失败了，本次没有回复（链路原因：%s）",
+                    self._last_chain_error or self._last_error or "未知",
+                )
                 return None
             from core.text_utils import split_sentences
             return split_sentences(result)
-        except Exception:
+        except Exception as e:
+            self._last_chain_error = f"降级失败: {type(e).__name__}"
+            logger.error("降级到非流式时异常: %s", e)
             return None
 
     def generate(self, prompt: str, max_tokens: int = 1024) -> Optional[str]:
@@ -442,13 +460,48 @@ class UniversalLLM(LLMEngine):
         result = self._request_once(messages, self.base_url, self.api_key, self.model)
         if result is not None:
             return result
-        # 主提供商失败（可能是 429/超时）→ 尝试备用
-        if self.fallback_api_key and self.fallback_base_url and self.fallback_model:
-            logger.warning(f"主提供商失败，降级到备用模型: {self.fallback_model}")
-            result = self._request_once(
-                messages, self.fallback_base_url, self.fallback_api_key, self.fallback_model
+
+        # 主提供商失败（可能是 429/超时）→ 尝试备用。
+        #
+        # ⚠️ 这里**绝不能改写 `_last_error`**：它是对外契约字段，
+        #    `quota_stats()["quota_blocked"]` 靠 `_last_error.startswith("429")` 判定，
+        #    把它包成"主(...)+备用(...)"会让配额状态**误报为未限流**
+        #    （实测：改了这里立刻让 4 条既有用例变红）。
+        #    所以诊断信息另开一个字段 `_last_chain_error`，两个字段各管各的。
+        main_err = self._last_error
+
+        if not (self.fallback_api_key and self.fallback_base_url and self.fallback_model):
+            self._last_chain_error = f"主({main_err or '未知'})；且未配置备用提供商"
+            logger.error(
+                "主提供商失败（%s），且**没有配置备用提供商** —— "
+                "这条链路上没有任何兜底，用户会直接得不到回复。"
+                "请检查 plugins.llm.params 的 fallback_api_key / "
+                "fallback_base_url / fallback_model 三项是否齐全。",
+                main_err or "原因未知",
             )
-        return result
+            return None
+
+        logger.warning(f"主提供商失败，降级到备用模型: {self.fallback_model}")
+        result = self._request_once(
+            messages, self.fallback_base_url, self.fallback_api_key, self.fallback_model
+        )
+        if result is not None:
+            return result
+
+        # 两家都失败：把两个原因**一起**记进 `_last_chain_error`（不动 `_last_error`）。
+        fallback_err = self._last_error
+        self._last_chain_error = (
+            f"主({main_err or '未知'}) + 备用({fallback_err or '未知'}) 均失败"
+        )
+        logger.error(
+            "主提供商与备用提供商**都失败了**，本次没有回复。"
+            "主失败原因=%s；备用失败原因=%s。"
+            "若备用是 404，通常表示该 `:free` 模型已被上游下架，"
+            "需要换一个仍在架的免费模型（见 config.yaml 的 fallback_model）。"
+            "若备用是'HTTP 200 但空回复'，多为 reasoning 型模型把正文放进了思维链字段。",
+            main_err or "未知", fallback_err or "未知",
+        )
+        return None
 
     def _request_once(self, messages, base_url, api_key, model) -> Optional[str]:
         """向单一端点发起一次请求，成功返回文本，失败返回 None"""
@@ -495,6 +548,13 @@ class UniversalLLM(LLMEngine):
                     self._last_error = ""      # 恢复正常 → 解除"被限流"状态
                     return content.strip()
 
+            # HTTP 200 但没有可用内容 —— 这也是一种**失败**，必须记账。
+            # 原先这里只打一行 warning 就 `return None`，**不写 `_last_error`**，
+            # 于是上层拼"两家分别怎么了"时备用那半只能显示"未知"，
+            # 排查者会误以为"备用没被调用过"（实测踩到：主 429 + 备用未知）。
+            # 常见成因：`reasoning` 型模型把内容全放进了思维链字段，
+            # 正文为空；或上游返回了空 choices。
+            self._last_error = "HTTP 200 但空回复"
             logger.warning("API 返回空回复")
             return None
 
@@ -670,7 +730,7 @@ class UniversalLLM(LLMEngine):
 
         Returns:
             `{quota_blocked, quota_hits, last_quota_at, last_error, ok_calls,
-              fallback_configured}`
+              fallback_configured, last_chain_error}`
             —— 不含任何密钥。
         """
         return {
@@ -680,6 +740,9 @@ class UniversalLLM(LLMEngine):
             "last_error": self._last_error,
             "ok_calls": self._ok_calls,
             "fallback_configured": bool(self.fallback_api_key and self.fallback_model),
+            # 整条链路为什么没能回答（主 + 备用各自的原因）。
+            # 与 `last_error` 分开：那个是"某一次请求"的，这个是"这一轮问答"的。
+            "last_chain_error": self._last_chain_error,
         }
 
     @staticmethod
