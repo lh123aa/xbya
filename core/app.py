@@ -499,6 +499,7 @@ class xbyaApp:
         for attempt in range(2):  # 最多重试一次（自愈设备失效）
             try:
                 if not pygame.mixer.get_init():
+                    pygame.mixer.pre_init(frequency=24000, size=-16, channels=1, buffer=1024)
                     pygame.mixer.init()
                 pygame.mixer.music.load(temp_path)
                 pygame.mixer.music.play()
@@ -671,7 +672,17 @@ class xbyaApp:
             from ui.pet_window import PetWindow
             
             app = QApplication.instance() or QApplication(sys.argv)
-            
+
+            # ⚡ 音频低延迟：预初始化 pygame.mixer，用小缓冲区。
+            #   默认 buffer=4096 ≈ 93ms@24kHz，改为 1024 ≈ 23ms。
+            #   pre_init 必须在任何 mixer.init() 之前调用才生效。
+            try:
+                import pygame
+                pygame.mixer.pre_init(frequency=24000, size=-16, channels=1, buffer=1024)
+                logger.info("音频: mixer预初始化 buffer=1024 (≈23ms延迟)")
+            except Exception as e:
+                logger.warning("音频: mixer预初始化失败（使用默认延迟）: %s", e)
+
             # 创建宠物窗口
             pet_window = PetWindow()
             self.pet_window = pet_window  # 供设置/其他模块引用（如快捷键重绑）

@@ -948,16 +948,21 @@ class PetWindow(QWidget):
         text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
         # 去掉水平分割线 --- / *** / ___
         text = re.sub(r'^[\-\*=_]{3,}\s*$', '', text, flags=re.MULTILINE)
-        # 去掉链接 [text](url) → text
-        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
         # ★ 去掉内部控制标记 [silent] / [thinking] / [emotion:xxx] 等。
         #   它们是**给管线看的控制指令**，不是给人看的内容 ——
         #   漏到字幕上就是"屏幕上出现 [silent]嗯嗯。"这种脏字。
-        #   必须在 markdown 链接规则**之后**处理，否则 `[silent]` 会被
-        #   误当链接文本；这里只吃"方括号里是单个英文控制词"的形状。
+        #   **必须在 markdown 链接规则之前处理**，否则 `[silent](叹气)` 会被
+        #   markdown 链接正则 `\[text\](url)` 误吃成 "silent"。
+        #   这里只吃"方括号里是单个英文控制词"的形状，不会误删 `[普通方括号]`。
         text = re.sub(r'\[\s*(?:silent|thinking|emotion(?::[a-z_]+)?|'
                       r'action(?::[a-z_]+)?|pause|listen|wait)\s*\]',
                       '', text, flags=re.IGNORECASE)
+        # 去掉链接 [text](url) → text
+        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+        # ★ 去掉括号包裹的中文情绪标记：(开心) (笑) (歪头) (害羞) (叹气) 等。
+        #   LLM 输出常见格式，是给管线看的情绪指令，不应被 TTS 朗读或显示在字幕上。
+        #   限制 1~6 个汉字，避免误删正常括号内容（如 "（含税价100元）" 超过 6 字不匹配）。
+        text = re.sub(r'[（(][\u4e00-\u9fff]{1,6}[）)]', '', text)
         # 去掉孤立的 * / # / > 残留（连续2个以上）
         text = re.sub(r'[\*#>]{2,}', '', text)
         # 去掉多余空白行（清理后可能留下空行）
@@ -1941,6 +1946,12 @@ class PetWindow(QWidget):
             # 播放线程：顺序播放音频块（阻塞式）
             # 字幕与音频同步：每句开播前更新为该句文本（字幕逐句滚动），
             # 播放期间 tick 冻结计时，全部播完后再停留 2.5s 清除。
+            #
+            # ⚡ 低延迟优化（改动2+3）：
+            #   队列项从 (raw_bytes, text) 改为 (sound_or_bytes, text, temp_path, duration_ms)。
+            #   合成线程预创建 pygame.mixer.Sound 对象（MP3→内存），
+            #   播放线程拿到的已是预加载的 Sound，play() 零延迟。
+            #   字幕在 Sound 就绪后、play() 之前显示，消除"字幕先出声音后到"的感知延迟。
             def _player():
                 while True:
                     # 每句取队列前先检查打断（避免阻塞在get时错过打断信号）
@@ -1972,57 +1983,68 @@ class PetWindow(QWidget):
                     if self.app and getattr(self.app, "_interrupt_requested", False):
                         logger.info("[voice] 播放线程：被打断，跳过剩余句子")
                         break
-                    audio, text = item
-                    # 逐句更新字幕：显示**当前句 + 上一句**（滚动窗口）。
-                    #
-                    # 为什么不是"只显示当前句"：每句把上一句擦掉，用户读到一半
-                    # 就没了，长回复只能看到碎片 —— 这正是"字幕动态更新没做好"
-                    # 的观感来源。
-                    # 为什么不是"一直累积全文"：窗口只有 228px 宽、字幕区 44px
-                    # 高（最多 2 行），累积会立刻溢出、后两行永远看不到。
-                    # 折中：保留最近两句，既有上下文衔接，又不溢出。
-                    #
-                    # ⚠️ 停留时长必须用**音频真实时长**，不能按字数估算。
-                    #    原先写的是 `max(2500, len(text)/4.0*1000 + 500)`，
-                    #    即"每字 250ms + 500ms 余量"。实测 5 句里有 4 句对不上，
-                    #    最长差 **+1.1s**（"啊？"估 2500ms 实际只有 1440ms）——
-                    #    字幕在语音播完后还挂着，用户看到的就是"字幕和语音不同步"。
-                    #    字数与时长不是线性关系：语速、标点停顿、音色都会影响。
-                    show_dur = self._audio_duration_ms(audio, text)
-                    if text:
-                        _prev = getattr(self, "_subtitle_prev_sentence", "")
-                        shown = f"{_prev}{text}" if _prev else text
-                        # 字幕停留 = 音频时长 + 少量余量，播完稍作停留再清
-                        self.show_bubble(shown, int(show_dur) + 300)
-                        # 记为"上一句"，供下一句拼接（仅当前句本身，不含再上一句）
-                        self._subtitle_prev_sentence = text
+                    # 解包队列项：(sound_or_bytes, text, temp_path, duration_ms)
+                    data, text, temp_path, show_dur = item
 
                     # ── 逐句情绪动效切换（跨线程安全） ──
                     if self._sentence_emotions and self._sentence_idx < len(self._sentence_emotions):
                         sent_emotion = self._sentence_emotions[self._sentence_idx]
                         if sent_emotion and sent_emotion != "talk":
-                            # 播放该句时切换到对应情绪动效（转主线程执行）
                             def _set_emotion(em=sent_emotion):
                                 self.anim_controller.set_state(em)
                                 self._forward_vrm_state(em)
                             self._invoke_on_main(_set_emotion)
                             logger.debug("[emotion] 逐句动效: [%d] %s", self._sentence_idx, sent_emotion)
                     self._sentence_idx += 1
+
                     # 半双工：正在播放视为"宠物在说话"，捕获的拾音是自己的声音 → 丢弃
                     self._speaking = True
                     # 每段播放前重置打断标志（确保新一段能正常播完，除非再次被打断）
                     if self.app and hasattr(self.app, "_interrupt_requested"):
                         self.app._interrupt_requested = False
+
                     try:
-                        self.app.play_audio(audio)
+                        import pygame
+                        # ⚡ 字幕在音频就绪后、play() 之前显示
+                        #   Sound 已在合成线程预加载到内存，此处无 load 延迟
+                        if text:
+                            _prev = getattr(self, "_subtitle_prev_sentence", "")
+                            shown = f"{_prev}{text}" if _prev else text
+                            self.show_bubble(shown, int(show_dur) + 300)
+                            self._subtitle_prev_sentence = text
+
+                        # 播放：优先用预创建的 Sound（零延迟），回退到原始字节
+                        if hasattr(data, 'play'):
+                            # pygame.mixer.Sound 对象（已在合成线程加载到内存）
+                            data.play()
+                            while pygame.mixer.get_busy():
+                                if not self.app or not self.app._running:
+                                    break
+                                if self._voice_muted:
+                                    pygame.mixer.stop()
+                                    break
+                                if self.app and getattr(self.app, "_interrupt_requested", False):
+                                    pygame.mixer.stop()
+                                    break
+                                pygame.time.wait(50)
+                        else:
+                            # 回退：原始字节，走 _play_audio 完整路径
+                            self.app.play_audio(data)
                     except Exception as e:
                         logger.error(f"播放失败: {e}")
                     finally:
                         self._speaking = False
+                        # 清理临时文件
+                        if temp_path:
+                            try:
+                                import os
+                                os.unlink(temp_path)
+                            except Exception:
+                                pass
+
                     # 被打断：丢弃剩余队列，结束播放线程（打断后立即处理用户新语音）
                     if self.app and getattr(self.app, "_interrupt_requested", False):
                         logger.info("[voice] 被用户语音打断，停止后续播放")
-                        # 排空队列（丢弃未播的句）
                         while True:
                             try:
                                 audio_queue.get_nowait()
@@ -2032,13 +2054,45 @@ class PetWindow(QWidget):
             player_thread = threading.Thread(target=_player, daemon=True)
             player_thread.start()
 
-            # 合成线程池：逐句 TTS（网络请求耗时，并行加快）
+            # 合成线程池：逐句 TTS + 预创建 Sound 对象（并行加快）
+            #
+            # ⚡ 低延迟优化（改动3）：
+            #   合成线程不仅返回 MP3 字节，还预创建 pygame.mixer.Sound 对象。
+            #   Sound 构造函数将整个 MP3 加载到内存（≈20-50ms），
+            #   播放线程拿到后直接 play()，省去 load() 的 50-200ms 延迟。
+            #   同时预计算音频时长，供字幕停留时间使用。
             def _synth(s):
                 try:
                     app = self.app
                     if app is None or not hasattr(app, "synthesize"):
                         return None
-                    return app.synthesize(s)
+                    audio_bytes = app.synthesize(s)
+                    if not audio_bytes:
+                        return None
+                    # 预创建 Sound 对象 + 写临时文件（供 Sound 加载）
+                    import pygame
+                    import tempfile
+                    import os as _os
+                    tmp_dir = None
+                    try:
+                        from ui.temp_manager import get_tmp_dir
+                        tmp_dir = get_tmp_dir()
+                    except Exception:
+                        pass
+                    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False,
+                                                     dir=tmp_dir) as f:
+                        f.write(audio_bytes)
+                        temp_path = f.name
+                    try:
+                        sound = pygame.mixer.Sound(filename=temp_path)
+                        # 从 Sound 获取真实时长（秒→毫秒）
+                        duration_ms = sound.get_length() * 1000.0
+                        return (sound, s, temp_path, duration_ms)
+                    except Exception as e:
+                        # Sound 创建失败：回退到原始字节 + 估算时长
+                        logger.debug("Sound预创建失败，回退: %s", e)
+                        duration_ms = self._audio_duration_ms(audio_bytes, s)
+                        return (audio_bytes, s, temp_path, duration_ms)
                 except Exception as e:
                     logger.error(f"合成失败: {e}")
                     return None
@@ -2050,26 +2104,25 @@ class PetWindow(QWidget):
                     # 解释器关闭中/线程池已停：安静跳过，不制造噪音日志
                     logger.debug("[voice] 合成线程池不可用，跳过本次播报: %s", e)
                     return
-                # 按句子顺序取结果入队（保序）；音频+文本一起入队，供字幕动态更新
+                # 按句子顺序取结果入队（保序）；Sound+文本+时长一起入队
                 # 每句最多等15秒（TTS网络请求），超时跳过该句
                 for s, f in zip(sentences, futures):
                     # 合成前检查打断（避免继续合成已不需要的句子）
                     if self.app and getattr(self.app, "_interrupt_requested", False):
                         logger.info("[voice] 合成中断：检测到打断信号，跳过剩余合成")
-                        # 取消未完成的合成任务
                         for pending_f in futures:
                             pending_f.cancel()
                         break
                     try:
-                        audio = f.result(timeout=15)
+                        result = f.result(timeout=15)
                     except concurrent.futures.TimeoutError:
                         logger.warning(f"[voice] TTS合成超时(15s)，跳过: {s[:30]}...")
-                        audio = None
+                        result = None
                     except Exception as e:
                         logger.error(f"[voice] TTS合成异常: {e}")
-                        audio = None
-                    if audio:
-                        audio_queue.put((audio, s))
+                        result = None
+                    if result:
+                        audio_queue.put(result)
 
             audio_queue.put(None)
             player_thread.join()

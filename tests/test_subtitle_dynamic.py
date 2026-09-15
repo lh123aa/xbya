@@ -59,6 +59,34 @@ def test_sanitize_keeps_legitimate_brackets(raw, expect):
     assert PetWindow._sanitize_text(raw) == expect
 
 
+# ---------- 1b. 括号情绪标记不得上屏（F1） ----------
+
+@pytest.mark.parametrize("raw,expect", [
+    ("(开心)你好呀", "你好呀"),
+    ("（笑）", ""),
+    ("嗯嗯(害羞)。", "嗯嗯。"),
+    ("[silent](叹气)好的", "好的"),
+    ("用户说（很好）", "用户说"),
+    ("（歪头）这个嘛…", "这个嘛…"),
+])
+def test_sanitize_strips_paren_emotion_markers(raw, expect):
+    """★ 括号包裹的中文情绪标记（LLM 输出常见格式）必须被剥掉。"""
+    from ui.pet_window import PetWindow
+    assert PetWindow._sanitize_text(raw) == expect
+
+
+@pytest.mark.parametrize("raw,expect", [
+    ("正常括号(含税价100元)内容", "正常括号(含税价100元)内容"),   # >6字不匹配
+    ("链接(http://example.com)在这里", "链接(http://example.com)在这里"),  # 非中文
+    ("数字(12345)不删", "数字(12345)不删"),                       # 非中文
+    ("中英混合(hello你好)保留", "中英混合(hello你好)保留"),         # 含英文
+])
+def test_sanitize_keeps_long_or_non_chinese_parens(raw, expect):
+    """反方向保护：超过 6 字或含非中文的括号内容不能被误删。"""
+    from ui.pet_window import PetWindow
+    assert PetWindow._sanitize_text(raw) == expect
+
+
 def test_show_bubble_sanitizes(win):
     """show_bubble 也必须过一遍清洗（不只是 _sanitize_text 本身）。"""
     win.show_bubble("[silent]你好呀", 1000)

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """小忆系统设置对话框"""
 import logging
 from typing import Optional
@@ -158,7 +158,11 @@ class SettingsDialog(QDialog):
         "plugins.tts.params.voice": "zh-CN-XiaoyiNeural",
         "plugins.tts.params.rate": 0,
         "plugins.tts.params.pitch": 0,
+        "plugins.llm.engine": "ollama",
         "voice.hotkey_toggle": "Ctrl+Alt+M",
+        "voice.hotkey_mute": "Ctrl+Alt+S",
+        "voice.hotkey_interrupt": "Ctrl+Alt+D",
+        "voice.hotkey_mic_next": "Ctrl+Alt+N",
         "ui.pet_size": 300,
         "ui.always_on_top": True,
         "system.autostart": False,
@@ -232,6 +236,27 @@ class SettingsDialog(QDialog):
         form.addRow("最小回复字数", self.reply_min_spin)
         form.addRow("识别模型", self.asr_model_combo)
         form.addRow("识别设备", self.asr_device_combo)
+
+        # 麦克风增益
+        self.mic_gain_slider = QSlider(Qt.Horizontal)
+        self.mic_gain_slider.setRange(2, 20)  # 1.0 ~ 10.0 (×0.5)
+        self.mic_gain_slider.setSingleStep(1)
+        self.mic_gain_label = QLabel("2.5")
+        gain_row = QHBoxLayout()
+        gain_row.addWidget(self.mic_gain_slider)
+        gain_row.addWidget(self.mic_gain_label)
+        self.mic_gain_slider.valueChanged.connect(
+            lambda v: self.mic_gain_label.setText(f"{v/2:.1f}"))
+        form.addRow("麦克风增益", gain_row)
+
+        # 唤醒词
+        self.wake_word_edit = QLineEdit()
+        form.addRow("唤醒词", self.wake_word_edit)
+
+        # VAD 过滤
+        self.vad_filter_check = QCheckBox("VAD 过滤")
+        self.vad_filter_check.setToolTip("过滤环境噪音，但可能截断长句（D19：需真实噪声环境验证）")
+        form.addRow("VAD", self.vad_filter_check)
 
         # ── 语音输出 part ──
         out_grp = QLabel("── 语音合成（输出） ──")
@@ -581,7 +606,7 @@ class SettingsDialog(QDialog):
                                 f"共 {len(lines)} 个中文音色：\n\n" + "\n".join(lines))
 
     def _tab_hotkey(self):
-        """⌨️ 快捷键：麦克风开关 / 静音 / 打断 三个全局热键"""
+        """⌨️ 快捷键：麦克风开关 / 静音 / 打断 / 切换麦克风 四个全局热键"""
         w = QWidget()
         form = QFormLayout(w)
         self.hotkey_enabled_check = QCheckBox("启用全局快捷键")
@@ -599,6 +624,11 @@ class SettingsDialog(QDialog):
         self.interrupt_hotkey_btn = HotkeyCaptureButton()
         self.interrupt_hotkey_btn.setToolTip("宠物说话时按下，立即停止说话（Ctrl+Alt+D）")
         form.addRow("打断说话", self.interrupt_hotkey_btn)
+
+        # 切换麦克风设备
+        self.mic_cycle_hotkey_btn = HotkeyCaptureButton()
+        self.mic_cycle_hotkey_btn.setToolTip("按顺序轮换麦克风设备，多声源场景快速试哪个能收到声音（Ctrl+Alt+N）")
+        form.addRow("切换麦克风", self.mic_cycle_hotkey_btn)
 
         tip = QLabel(
             "可以自由设置：单个键（如 K、F5）或组合键（如 Ctrl+Alt+M）都行\n"
@@ -752,6 +782,14 @@ class SettingsDialog(QDialog):
         self.asr_model_combo.setCurrentIndex(max(idx, 0))
         idx = self.asr_device_combo.findText(cfg.get("plugins.asr.params.device", "cpu"))
         self.asr_device_combo.setCurrentIndex(max(idx, 0))
+        # 麦克风增益
+        gain = float(cfg.get("voice.mic_gain", 2.5))
+        self.mic_gain_slider.setValue(int(gain * 2))
+        self.mic_gain_label.setText(f"{gain:.1f}")
+        # 唤醒词
+        self.wake_word_edit.setText(cfg.get("voice.wake_word", "嘿欣雅"))
+        # VAD
+        self.vad_filter_check.setChecked(bool(cfg.get("voice.vad_filter", False)))
 
         voice = cfg.get("plugins.tts.params.voice", "zh-CN-XiaoyiNeural")
         idx = self.tts_voice_combo.findData(voice)
@@ -767,6 +805,7 @@ class SettingsDialog(QDialog):
         self.hotkey_btn.set_combo(cfg.get("voice.hotkey_toggle", "Ctrl+Alt+M"))
         self.mute_hotkey_btn.set_combo(cfg.get("voice.hotkey_mute", "Ctrl+Alt+S"))
         self.interrupt_hotkey_btn.set_combo(cfg.get("voice.hotkey_interrupt", "Ctrl+Alt+D"))
+        self.mic_cycle_hotkey_btn.set_combo(cfg.get("voice.hotkey_mic_next", "Ctrl+Alt+N"))
 
         size = int(cfg.get("ui.pet_size", 300))
         self.pet_size_slider.setValue(size)
@@ -827,6 +866,10 @@ class SettingsDialog(QDialog):
 
         cfg.set("plugins.asr.params.model_size", self.asr_model_combo.currentText())
         cfg.set("plugins.asr.params.device", self.asr_device_combo.currentText())
+        # 麦克风增益 / 唤醒词 / VAD
+        cfg.set("voice.mic_gain", self.mic_gain_slider.value() / 2)
+        cfg.set("voice.wake_word", self.wake_word_edit.text().strip() or "嘿欣雅")
+        cfg.set("voice.vad_filter", bool(self.vad_filter_check.isChecked()))
         cfg.set("plugins.tts.params.voice", self.tts_voice_combo.currentData())
         cfg.set("plugins.tts.params.rate", self.tts_rate_slider.value())
         cfg.set("plugins.tts.params.pitch", self.tts_pitch_slider.value())
@@ -846,6 +889,7 @@ class SettingsDialog(QDialog):
         cfg.set("voice.hotkey_toggle", self.hotkey_btn.current_combo)
         cfg.set("voice.hotkey_mute", self.mute_hotkey_btn.current_combo)
         cfg.set("voice.hotkey_interrupt", self.interrupt_hotkey_btn.current_combo)
+        cfg.set("voice.hotkey_mic_next", self.mic_cycle_hotkey_btn.current_combo)
 
         cfg.set("ui.pet_size", self.pet_size_slider.value())
         cfg.set("ui.always_on_top", self.topmost_check.isChecked())
@@ -902,6 +946,7 @@ class SettingsDialog(QDialog):
             asyncio.run(edge_tts.Communicate(text, voice, **kwargs).save(tmp_path))
 
             if not pygame.mixer.get_init():
+                pygame.mixer.pre_init(frequency=24000, size=-16, channels=1, buffer=1024)
                 pygame.mixer.init()
             # Windows 上用 Sound 对象代替 music（支持从文件路径加载，不锁文件）
             sound = pygame.mixer.Sound(tmp_path)
@@ -939,7 +984,27 @@ class SettingsDialog(QDialog):
         idx = self.tts_voice_combo.findData(d["plugins.tts.params.voice"])
         if idx >= 0:
             self.tts_voice_combo.setCurrentIndex(idx)
-        self.hotkey_btn.set_combo(d["voice.hotkey_toggle"])
+        # TTS 语速/音调
+        self.tts_rate_slider.setValue(d.get("plugins.tts.params.rate", 0))
+        self._update_rate_label(self.tts_rate_slider.value())
+        self.tts_pitch_slider.setValue(d.get("plugins.tts.params.pitch", 0))
+        self._update_pitch_label(self.tts_pitch_slider.value())
+        # LLM 引擎
+        engine = d.get("plugins.llm.engine", "ollama")
+        ei = self.llm_engine_combo.findData(engine)
+        self.llm_engine_combo.setCurrentIndex(max(ei, 0))
+        # 字幕颜色
+        fg = d.get("ui.subtitle_fg_color", "#FFFFFF")
+        bg = d.get("ui.subtitle_bg_color", "#000000")
+        self._subtitle_fg_color = fg
+        self._subtitle_bg_color = bg
+        self.subtitle_fg_btn.setText(fg)
+        self.subtitle_bg_btn.setText(bg)
+        self.subtitle_check.setChecked(d.get("ui.subtitle_enabled", True))
+        # 热键
+        self.hotkey_btn.set_combo(d.get("voice.hotkey_toggle", "Ctrl+Alt+M"))
+        self.mute_hotkey_btn.set_combo(d.get("voice.hotkey_mute", "Ctrl+Alt+S"))
+        self.interrupt_hotkey_btn.set_combo(d.get("voice.hotkey_interrupt", "Ctrl+Alt+D"))
         self.pet_size_slider.setValue(d["ui.pet_size"])
         self.pet_size_label.setText(f"{d['ui.pet_size']}px")
         self.topmost_check.setChecked(d["ui.always_on_top"])
